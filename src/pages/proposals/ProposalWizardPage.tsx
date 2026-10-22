@@ -148,15 +148,17 @@ export const ProposalWizardPage: React.FC = () => {
       setSelectedLenderId(existingProposal.lenderId);
     } else if (initialQuotation) {
       // Prefill from quotation!
-      setCustomerType(initialQuotation.customerType);
-      setCustomerName(initialQuotation.customerName);
-      setContactPerson(initialQuotation.contactPerson);
-      setEmail(initialQuotation.email);
-      setPhone(initialQuotation.phone);
-      setAddress(initialQuotation.address);
+      setCustomerType(initialQuotation.customerType || 'business');
+      setCustomerName(initialQuotation.customerName || initialQuotation.title || '');
+      setContactPerson(initialQuotation.contactPerson || '');
+      setEmail(initialQuotation.email || '');
+      setPhone(initialQuotation.phone || '');
+      setAddress(initialQuotation.address || '');
       setCompanyNumber(initialQuotation.companyNumber || '');
-      setDealerId(initialQuotation.dealerId);
-      setAssets(initialQuotation.assets);
+      setDealerId(initialQuotation.dealerId || '');
+      if (initialQuotation.assets && initialQuotation.assets.length > 0) {
+        setAssets(initialQuotation.assets);
+      }
 
       const f = initialQuotation.financeDetails;
       setFinanceType(f.financeType);

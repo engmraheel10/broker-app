@@ -2,14 +2,19 @@
 
 A high-quality, clickable, enterprise-grade React + TypeScript frontend prototype of a commercial Broker & Asset Finance Management Platform.
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Single Run)
 
-The platform is running locally with Vite:
+Start the entire application with one command:
 
 ```bash
-cd broker-asset-finance
-npm install
-npm run dev
+./starter.sh
+```
+
+Or from inside `broker-app`:
+
+```bash
+cd broker-app
+./starter.sh
 ```
 
 Local URL: **http://localhost:5173/**

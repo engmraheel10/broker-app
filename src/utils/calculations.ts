@@ -131,3 +131,90 @@ export function generateRef(prefix: 'QT' | 'PR'): string {
   const randomNum = Math.floor(100000 + Math.random() * 900000);
   return `${prefix}-2026-${randomNum}`;
 }
+
+export interface AmortizationRow {
+  month: number;
+  periodLabel: string;
+  payment: number;
+  principal: number;
+  interest: number;
+  remainingBalance: number;
+  notes?: string;
+}
+
+export function generateAmortizationSchedule(
+  principalAmount: number,
+  annualInterestRate: number,
+  termMonths: number,
+  balloonPayment = 0,
+  documentationFee = 0,
+  optionToPurchaseFee = 0
+): AmortizationRow[] {
+  const schedule: AmortizationRow[] = [];
+  const n = Math.max(1, Math.round(termMonths));
+  const r = (annualInterestRate / 100) / 12;
+  const pv = Math.max(0, principalAmount);
+  const fv = Math.max(0, balloonPayment);
+
+  let pmt = 0;
+  if (r === 0) {
+    pmt = (pv - fv) / n;
+  } else {
+    const factor = Math.pow(1 + r, -n);
+    pmt = (pv - fv * factor) * (r / (1 - factor));
+  }
+  pmt = Math.round(pmt * 100) / 100;
+
+  let balance = pv;
+  const now = new Date();
+
+  for (let m = 1; m <= n; m++) {
+    const interest = Math.round(balance * r * 100) / 100;
+    let principal = Math.round((pmt - interest) * 100) / 100;
+    
+    if (m === n) {
+      principal = Math.round((balance - fv) * 100) / 100;
+      balance = fv;
+    } else {
+      balance = Math.max(0, Math.round((balance - principal) * 100) / 100);
+    }
+
+    const paymentDate = new Date(now.getFullYear(), now.getMonth() + m, 1);
+    const monthName = paymentDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+
+    let notes = 'Standard monthly repayment';
+    let totalMonthPayment = pmt;
+
+    if (m === 1 && documentationFee > 0) {
+      notes = `Includes £${documentationFee.toLocaleString()} documentation fee`;
+      totalMonthPayment += documentationFee;
+    }
+
+    if (m === n) {
+      if (fv > 0 && optionToPurchaseFee > 0) {
+        notes = `Final payment + £${fv.toLocaleString()} balloon & £${optionToPurchaseFee.toLocaleString()} option fee`;
+        totalMonthPayment += fv + optionToPurchaseFee;
+      } else if (fv > 0) {
+        notes = `Final payment + £${fv.toLocaleString()} balloon residual`;
+        totalMonthPayment += fv;
+      } else if (optionToPurchaseFee > 0) {
+        notes = `Final payment + £${optionToPurchaseFee.toLocaleString()} option to purchase fee`;
+        totalMonthPayment += optionToPurchaseFee;
+      } else {
+        notes = 'Final completion payment';
+      }
+    }
+
+    schedule.push({
+      month: m,
+      periodLabel: `Month ${m} (${monthName})`,
+      payment: Math.round(totalMonthPayment * 100) / 100,
+      principal: Math.max(0, principal),
+      interest: Math.max(0, interest),
+      remainingBalance: Math.max(0, balance),
+      notes,
+    });
+  }
+
+  return schedule;
+}

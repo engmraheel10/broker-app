@@ -80,16 +80,18 @@ export const QuotationFormPage: React.FC = () => {
   // Prepopulate if editing
   useEffect(() => {
     if (existingQuotation) {
-      setCustomerType(existingQuotation.customerType);
-      setCustomerName(existingQuotation.customerName);
-      setContactPerson(existingQuotation.contactPerson);
-      setEmail(existingQuotation.email);
-      setPhone(existingQuotation.phone);
-      setAddress(existingQuotation.address);
+      setCustomerType(existingQuotation.customerType || 'business');
+      setCustomerName(existingQuotation.customerName || existingQuotation.title || '');
+      setContactPerson(existingQuotation.contactPerson || '');
+      setEmail(existingQuotation.email || '');
+      setPhone(existingQuotation.phone || '');
+      setAddress(existingQuotation.address || '');
       setCompanyNumber(existingQuotation.companyNumber || '');
-      setDealerId(existingQuotation.dealerId);
+      setDealerId(existingQuotation.dealerId || '');
       setNotes(existingQuotation.notes || '');
-      setAssets(existingQuotation.assets);
+      if (existingQuotation.assets && existingQuotation.assets.length > 0) {
+        setAssets(existingQuotation.assets);
+      }
 
       const f = existingQuotation.financeDetails;
       setFinanceType(f.financeType);

@@ -104,7 +104,7 @@ export const DashboardPage: React.FC = () => {
           icon={FileSpreadsheet}
           accentColor="blue"
           trend={{ value: '+14.2%', isPositive: true }}
-          onClick={() => navigate('/quotations')}
+          onClick={() => navigate('/workspace?tab=quotations')}
         />
         <MetricCard
           title="Active Proposals"
@@ -113,7 +113,7 @@ export const DashboardPage: React.FC = () => {
           icon={FileText}
           accentColor="purple"
           trend={{ value: '+8.5%', isPositive: true }}
-          onClick={() => navigate('/proposals')}
+          onClick={() => navigate('/workspace?tab=proposals')}
         />
         <MetricCard
           title="Submitted / In Review"
@@ -311,10 +311,10 @@ export const DashboardPage: React.FC = () => {
               <p className="text-xs text-slate-500">Latest customer finance quotes</p>
             </div>
             <button
-              onClick={() => navigate('/quotations')}
+              onClick={() => navigate('/workspace?tab=quotations')}
               className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
             >
-              View All ({quotations.length})
+              View All in Workspace ({quotations.length})
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -362,10 +362,10 @@ export const DashboardPage: React.FC = () => {
               <p className="text-xs text-slate-500">Lender credit applications</p>
             </div>
             <button
-              onClick={() => navigate('/proposals')}
+              onClick={() => navigate('/workspace?tab=proposals')}
               className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
             >
-              View All ({proposals.length})
+              View All in Workspace ({proposals.length})
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>

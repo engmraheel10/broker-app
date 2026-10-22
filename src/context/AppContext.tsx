@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   Quotation, Proposal, Customer, AssetRecord, Broker, Dealer, 
-  Lender, UserProfile, AuditRecord, UserRole, ProposalStatus 
+  Lender, UserProfile, AuditRecord, UserRole, ProposalStatus,
+  InventoryItem 
 } from '../types';
 import { 
   INITIAL_QUOTATIONS, INITIAL_PROPOSALS, INITIAL_CUSTOMERS, 
   INITIAL_ASSETS, INITIAL_BROKERS, INITIAL_DEALERS, INITIAL_LENDERS, 
-  INITIAL_USERS, INITIAL_AUDIT_LOGS 
+  INITIAL_USERS, INITIAL_AUDIT_LOGS, INITIAL_INVENTORY 
 } from '../data/mockData';
 import { generateRef } from '../utils/calculations';
 
@@ -44,6 +45,12 @@ interface AppContextType {
   addDealer: (d: Partial<Dealer>) => Dealer;
   getDealer: (id: string) => Dealer | undefined;
   
+  inventory: InventoryItem[];
+  addInventoryItem: (item: Partial<InventoryItem>) => InventoryItem;
+  updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => InventoryItem;
+  deleteInventoryItem: (id: string) => void;
+  getInventoryItem: (id: string) => InventoryItem | undefined;
+
   assets: AssetRecord[];
   users: UserProfile[];
   addUser: (u: Partial<UserProfile>) => UserProfile;
@@ -63,6 +70,7 @@ const STORAGE_KEYS = {
   CUSTOMERS: 'capitas_customers_v1',
   BROKERS: 'capitas_brokers_v1',
   DEALERS: 'capitas_dealers_v1',
+  INVENTORY: 'capitas_inventory_v1',
   USERS: 'capitas_users_v1',
   AUDIT: 'capitas_audit_v1',
   CURRENT_USER_ROLE: 'capitas_user_role_v1',
@@ -91,6 +99,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [customers, setCustomers] = useState<Customer[]>(() => loadStorage(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS));
   const [brokers, setBrokers] = useState<Broker[]>(() => loadStorage(STORAGE_KEYS.BROKERS, INITIAL_BROKERS));
   const [dealers, setDealers] = useState<Dealer[]>(() => loadStorage(STORAGE_KEYS.DEALERS, INITIAL_DEALERS));
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => loadStorage(STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY));
   const [auditLogs, setAuditLogs] = useState<AuditRecord[]>(() => loadStorage(STORAGE_KEYS.AUDIT, INITIAL_AUDIT_LOGS));
   const [lenders] = useState<Lender[]>(INITIAL_LENDERS);
   const [assets] = useState<AssetRecord[]>(INITIAL_ASSETS);
@@ -105,6 +114,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.PROPOSALS, JSON.stringify(proposals));
   }, [proposals]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory));
+  }, [inventory]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
@@ -185,15 +198,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updated = {
         id: `qt-${Date.now()}`,
         reference: newRef,
+        title: qData.title || `Finance Quote - ${qData.financeDetails?.financeType ? qData.financeDetails.financeType.replace(/_/g, ' ') : 'Asset Facility'}`,
+        assetCategoryType: qData.assetCategoryType || 'hard',
+        assetQuantity: qData.assetQuantity || 1,
+        assetCost: qData.assetCost || 0,
+        vatAmount: qData.vatAmount || 0,
+        vatRate: qData.vatRate || 20,
+        vatTreatment: qData.vatTreatment || 'financed',
+        loanAmount: qData.loanAmount || 0,
         customerType: qData.customerType || 'business',
-        customerName: qData.customerName || 'New Customer',
+        customerName: qData.customerName || (qData.title ? qData.title : 'Direct Finance Quote'),
         contactPerson: qData.contactPerson || '',
         email: qData.email || '',
         phone: qData.phone || '',
         address: qData.address || '',
         companyNumber: qData.companyNumber,
         dealerId: qData.dealerId || 'dlr-1',
-        dealerName: qData.dealerName || 'Atlas Plant & Machinery Ltd',
+        dealerName: qData.dealerName || 'Direct Facility',
         salesRep: currentUser.name,
         assets: qData.assets || [],
         financeDetails: qData.financeDetails || {
@@ -207,15 +228,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           documentationFee: 295,
           optionToPurchaseFee: 150,
         },
-        status: qData.status || 'draft',
+        status: qData.status || 'saved',
         notes: qData.notes || '',
         createdAt: now,
         updatedAt: now,
         validUntil,
       };
       setQuotations(prev => [updated, ...prev]);
-      recordAudit('CREATE_QUOTATION', 'Quotation', updated.reference, `Created new quotation for ${updated.customerName}`);
-      addToast('Quotation Created', `Quotation ${updated.reference} created successfully.`);
+      recordAudit('CREATE_QUOTATION', 'Quotation', updated.reference, `Created financial quote ${updated.reference}`);
+      addToast('Quotation Saved', `Quotation ${updated.reference} has been saved to your Workspace.`);
     }
     return updated;
   };
@@ -478,6 +499,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newUser;
   };
 
+  // Inventory Operations
+  const addInventoryItem = (itemData: Partial<InventoryItem>): InventoryItem => {
+    const newItem: InventoryItem = {
+      id: `inv-${Date.now()}`,
+      dealerId: itemData.dealerId || (currentUser.organization.includes('Atlas') ? 'dlr-1' : 'dlr-1'),
+      dealerName: itemData.dealerName || currentUser.organization || 'Atlas Plant & Machinery Ltd',
+      title: itemData.title || 'New Equipment Asset',
+      imageUrl: itemData.imageUrl || 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=600&q=80',
+      categoryType: itemData.categoryType || 'hard',
+      categoryName: itemData.categoryName || 'Commercial Equipment',
+      manufacturer: itemData.manufacturer || 'Commercial Supplier',
+      model: itemData.model || '',
+      year: itemData.year || new Date().getFullYear(),
+      vinOrSerial: itemData.vinOrSerial || `VIN-${Math.floor(100000 + Math.random() * 900000)}`,
+      price: Number(itemData.price) || 50000,
+      quantity: Number(itemData.quantity) || 1,
+      status: itemData.status || 'in_stock',
+      description: itemData.description || '',
+      specifications: itemData.specifications || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setInventory(prev => [newItem, ...prev]);
+    recordAudit('CREATE_INVENTORY', 'Inventory', newItem.title, `Enrolled asset in dealer inventory: ${newItem.title} (£${newItem.price.toLocaleString()})`);
+    addToast('Asset Added to Inventory', `${newItem.title} added to available stock.`);
+    return newItem;
+  };
+
+  const updateInventoryItem = (id: string, updates: Partial<InventoryItem>): InventoryItem => {
+    let updatedItem: InventoryItem | undefined;
+    setInventory(prev => prev.map(item => {
+      if (item.id === id) {
+        updatedItem = {
+          ...item,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        };
+        return updatedItem;
+      }
+      return item;
+    }));
+    if (updatedItem) {
+      recordAudit('UPDATE_INVENTORY', 'Inventory', updatedItem.title, `Updated asset stock record for ${updatedItem.title}`);
+      addToast('Inventory Updated', `${updatedItem.title} details updated successfully.`);
+      return updatedItem;
+    }
+    throw new Error(`Inventory item ${id} not found`);
+  };
+
+  const deleteInventoryItem = (id: string) => {
+    const item = inventory.find(i => i.id === id);
+    setInventory(prev => prev.filter(i => i.id !== id));
+    if (item) {
+      recordAudit('DELETE_INVENTORY', 'Inventory', item.title, `Removed asset ${item.title} from inventory`);
+      addToast('Asset Removed', `${item.title} removed from dealer inventory.`, 'info');
+    }
+  };
+
+  const getInventoryItem = (id: string) => inventory.find(i => i.id === id);
+
   return (
     <AppContext.Provider
       value={{
@@ -502,6 +583,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dealers,
         addDealer,
         getDealer,
+        inventory,
+        addInventoryItem,
+        updateInventoryItem,
+        deleteInventoryItem,
+        getInventoryItem,
         assets,
         users,
         addUser,

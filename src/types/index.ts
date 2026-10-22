@@ -26,26 +26,37 @@ export interface FinanceDetails {
   optionToPurchaseFee: number;
 }
 
+export type AssetCategoryType = 'hard' | 'soft';
+
 export type QuotationStatus = 'draft' | 'saved' | 'converted' | 'expired';
 
 export interface Quotation {
   id: string;
   reference: string;
-  customerType: CustomerType;
-  customerName: string;
-  contactPerson: string;
-  email: string;
-  phone: string;
-  address: string;
+  title?: string;
+  assetCategoryType?: AssetCategoryType;
+  assetQuantity?: number;
+  assetCost?: number;
+  vatAmount?: number;
+  vatRate?: number;
+  vatTreatment?: 'financed' | 'upfront' | 'zero';
+  loanAmount?: number;
+  customerType?: CustomerType;
+  customerName?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
   companyNumber?: string;
-  dealerId: string;
-  dealerName: string;
-  salesRep: string;
+  dealerId?: string;
+  dealerName?: string;
+  salesRep?: string;
   assets: AssetLineItem[];
   financeDetails: FinanceDetails;
   status: QuotationStatus;
   notes?: string;
   convertedProposalId?: string;
+  inventoryItemId?: string;
   createdAt: string;
   updatedAt: string;
   validUntil: string;
@@ -142,6 +153,27 @@ export interface AssetRecord {
   quotationRef?: string;
   proposalRef?: string;
   status: 'quoted' | 'proposed' | 'financed' | 'delivered';
+}
+
+export interface InventoryItem {
+  id: string;
+  dealerId: string;
+  dealerName: string;
+  title: string;
+  imageUrl?: string;
+  categoryType: AssetCategoryType;
+  categoryName: string;
+  manufacturer: string;
+  model: string;
+  year?: number;
+  vinOrSerial?: string;
+  price: number;
+  quantity: number;
+  status: 'in_stock' | 'reserved' | 'sold';
+  description?: string;
+  specifications?: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Broker {

@@ -15,6 +15,7 @@ import {
   Calendar,
   Clock,
   Printer,
+  Download,
   ShieldCheck,
   CheckCircle2,
   ExternalLink,
@@ -22,6 +23,8 @@ import {
   Tag,
   User
 } from 'lucide-react';
+import { exportQuotationRepaymentPDF, PDFQuotationData } from '../../utils/pdfGenerator';
+import { generateAmortizationSchedule } from '../../utils/calculations';
 
 export const QuotationDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -57,6 +60,49 @@ export const QuotationDetailPage: React.FC = () => {
   const handleDuplicate = () => {
     const copy = duplicateQuotation(quotation.id);
     navigate(`/quotations/${copy.id}/edit`);
+  };
+
+  const handleDownloadPDF = () => {
+    const schedule = generateAmortizationSchedule(
+      calc.financeAmount,
+      quotation.financeDetails.interestRate,
+      quotation.financeDetails.termMonths,
+      quotation.financeDetails.balloonPayment,
+      quotation.financeDetails.documentationFee,
+      quotation.financeDetails.optionToPurchaseFee
+    );
+
+    const pdfData: PDFQuotationData = {
+      reference: quotation.reference,
+      title: quotation.title || quotation.customerName || 'Asset Finance Quotation',
+      dealerName: quotation.dealerName,
+      userName: quotation.salesRep,
+      userRole: 'Dealer Admin',
+      assetCategoryType: quotation.assetCategoryType || 'hard',
+      assetQuantity: quotation.assetQuantity || quotation.assets.length || 1,
+      assetCost: quotation.assetCost || calc.assetSubtotal,
+      vatTreatment: quotation.vatTreatment || 'financed',
+      vatAmount: quotation.vatAmount || calc.vatAmount,
+      vatRate: quotation.vatRate || 20,
+      totalCostIncVAT: calc.totalCostIncVAT,
+      financeType: quotation.financeDetails.financeType,
+      deposit: quotation.financeDetails.deposit,
+      loanAmount: calc.financeAmount,
+      termMonths: quotation.financeDetails.termMonths,
+      interestRate: quotation.financeDetails.interestRate,
+      paymentFrequency: quotation.financeDetails.paymentFrequency,
+      balloonPayment: quotation.financeDetails.balloonPayment,
+      documentationFee: quotation.financeDetails.documentationFee,
+      optionToPurchaseFee: quotation.financeDetails.optionToPurchaseFee,
+      estimatedRepayment: calc.estimatedRepayment,
+      totalInterest: calc.totalInterest,
+      totalRepayable: calc.totalRepayable,
+      createdAt: quotation.createdAt,
+      validUntil: quotation.validUntil,
+    };
+
+    exportQuotationRepaymentPDF(pdfData, schedule);
+    addToast('PDF Downloaded', `Repayment schedule for ${quotation.reference} downloaded.`, 'success');
   };
 
   const handleProceedToProposal = () => {
@@ -100,13 +146,20 @@ export const QuotationDetailPage: React.FC = () => {
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
             <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-1.5 rounded-lg bg-navy-900 px-3.5 py-2 text-xs font-bold text-white hover:bg-navy-800 shadow-sm transition-colors"
+            >
+              <Download className="h-4 w-4 text-brand-400" />
+              Download PDF Schedule
+            </button>
+            <button
               onClick={() => {
                 window.print();
               }}
               className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition-colors"
             >
               <Printer className="h-4 w-4 text-slate-500" />
-              Print / PDF
+              Print
             </button>
             <button
               onClick={handleDuplicate}

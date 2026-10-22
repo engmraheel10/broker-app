@@ -40,11 +40,13 @@ export const QuotationsListPage: React.FC = () => {
   // Filtered and sorted quotations
   const filteredQuotations = useMemo(() => {
     return quotations.filter((q) => {
+      const custName = q.customerName || q.title || '';
+      const dlrName = q.dealerName || '';
       const matchesSearch =
         searchTerm === '' ||
         q.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        q.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        q.dealerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        custName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        dlrName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         q.assets.some((a) => a.model.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesStatus = statusFilter === 'all' || q.status === statusFilter;
@@ -56,10 +58,12 @@ export const QuotationsListPage: React.FC = () => {
       if (sortBy === 'createdAt') {
         comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       } else if (sortBy === 'customerName') {
-        comparison = a.customerName.localeCompare(b.customerName);
+        const nameA = a.customerName || a.title || '';
+        const nameB = b.customerName || b.title || '';
+        comparison = nameA.localeCompare(nameB);
       } else if (sortBy === 'financeAmount') {
-        const amtA = calculateFinance(a.assets, a.financeDetails).financeAmount;
-        const amtB = calculateFinance(b.assets, b.financeDetails).financeAmount;
+        const amtA = a.loanAmount || calculateFinance(a.assets, a.financeDetails).financeAmount;
+        const amtB = b.loanAmount || calculateFinance(b.assets, b.financeDetails).financeAmount;
         comparison = amtA - amtB;
       }
       return sortDirection === 'asc' ? comparison : -comparison;

@@ -40,7 +40,7 @@ export const CustomerDetailPage: React.FC = () => {
   }
 
   const customerQuotations = quotations.filter(
-    (q) => q.customerName.toLowerCase() === customer.name.toLowerCase()
+    (q) => (q.customerName || '').toLowerCase() === customer.name.toLowerCase()
   );
   const customerProposals = proposals.filter(
     (p) => p.customerName.toLowerCase() === customer.name.toLowerCase()

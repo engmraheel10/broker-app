@@ -5,7 +5,8 @@ import { UserRole } from '../../types';
 import { ToastContainer } from '../common/ToastContainer';
 import {
   LayoutDashboard,
-  FileSpreadsheet,
+  FolderKanban,
+  Calculator,
   FileText,
   Users,
   Truck,
@@ -22,41 +23,61 @@ import {
   ChevronDown,
   Menu,
   X,
-  ExternalLink,
   Shield,
-  LogOut,
   ChevronRight,
   Landmark,
-  Layers
+  Layers,
+  PanelLeftClose,
+  PanelLeft,
+  Package
 } from 'lucide-react';
 
 export const AppLayout: React.FC = () => {
-  const { currentUser, switchRole, quotations, proposals, users } = useApp();
+  const { currentUser, switchRole, quotations, proposals, users, inventory } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Collapsible sidebar state (can disappear on desktop and mobile)
+  const [sidebarVisible, setSidebarVisible] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const isDealer = currentUser.role === 'Dealer Admin' || currentUser.role === 'Dealer User';
+  const canAccessInventory = isDealer || currentUser.role === 'Tenant Admin';
+
+  const dealerInventoryCount = isDealer
+    ? inventory.filter(i => i.dealerName === currentUser.organization || i.dealerId === 'dlr-1').length
+    : inventory.length;
+
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { 
-      label: 'Quotations', 
-      path: '/quotations', 
-      icon: FileSpreadsheet, 
-      badge: quotations.filter(q => q.status === 'draft' || q.status === 'saved').length 
+      label: 'Workspace', 
+      path: '/workspace', 
+      icon: FolderKanban, 
+      badge: quotations.length + proposals.length,
+      badgeColor: 'bg-brand-600'
     },
     { 
-      label: 'Proposals', 
-      path: '/proposals', 
-      icon: FileText, 
-      badge: proposals.filter(p => p.status === 'submitted' || p.status === 'under_review').length,
-      badgeColor: 'bg-amber-500' 
+      label: 'Quotation', 
+      path: '/quotations', 
+      icon: Calculator 
     },
+    { 
+      label: 'Proposal', 
+      path: '/proposals', 
+      icon: FileText 
+    },
+    ...(canAccessInventory ? [{
+      label: 'Inventory',
+      path: '/inventory',
+      icon: Package,
+      badge: dealerInventoryCount,
+      badgeColor: 'bg-emerald-600'
+    }] : []),
     { label: 'Customers', path: '/customers', icon: Users },
     { label: 'Assets', path: '/assets', icon: Truck },
     { label: 'Brokers', path: '/brokers', icon: Briefcase },
@@ -79,7 +100,7 @@ export const AppLayout: React.FC = () => {
       const matchingNav = navItems.find(n => n.path === curPath);
       let label = matchingNav ? matchingNav.label : part;
       
-      if (part === 'new') label = 'Create';
+      if (part === 'new') label = 'New';
       if (part === 'edit') label = 'Edit';
       if (part.startsWith('qt-') || part.startsWith('pr-') || part.startsWith('cst-') || part.startsWith('brk-') || part.startsWith('dlr-')) {
         label = part.toUpperCase();
@@ -122,8 +143,8 @@ export const AppLayout: React.FC = () => {
   const filteredQuotations = quotations.filter(q => 
     searchQuery && (
       q.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.assets.some(a => a.model.toLowerCase().includes(searchQuery.toLowerCase()))
+      (q.title && q.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (q.customerName && q.customerName.toLowerCase().includes(searchQuery.toLowerCase()))
     )
   );
 
@@ -137,24 +158,26 @@ export const AppLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
-      {/* Mobile Sidebar Backdrop */}
-      {sidebarOpen && (
+      {/* Mobile Backdrop when sidebar is open */}
+      {sidebarVisible && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/60 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setSidebarVisible(false)}
         />
       )}
 
-      {/* Persistent Left Sidebar */}
+      {/* Disappearing / Collapsible Left Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-navy-900 text-slate-300 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-navy-800 bg-navy-900 text-slate-300 transition-all duration-300 ease-in-out lg:static ${
+          sidebarVisible
+            ? 'translate-x-0 opacity-100'
+            : '-translate-x-full lg:-ml-64 opacity-0 pointer-events-none'
         }`}
       >
         {/* Brand Header */}
         <div className="flex h-16 items-center justify-between border-b border-navy-800 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm font-bold text-lg">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white shadow-xs font-bold text-lg">
               <Layers className="h-5 w-5" />
             </div>
             <div>
@@ -167,11 +190,14 @@ export const AppLayout: React.FC = () => {
               <p className="text-[11px] text-slate-400">Broker & Asset Platform</p>
             </div>
           </div>
+
+          {/* Button to collapse/hide sidebar */}
           <button
-            onClick={() => setSidebarOpen(false)}
-            className="rounded-md p-1.5 text-slate-400 hover:bg-navy-800 hover:text-white lg:hidden"
+            onClick={() => setSidebarVisible(false)}
+            title="Hide Sidebar"
+            className="rounded-md p-1.5 text-slate-400 hover:bg-navy-800 hover:text-white transition-colors"
           >
-            <X className="h-5 w-5" />
+            <PanelLeftClose className="h-4 w-4" />
           </button>
         </div>
 
@@ -198,10 +224,12 @@ export const AppLayout: React.FC = () => {
               <NavLink
                 key={item.path}
                 to={item.path}
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => {
+                  if (window.innerWidth < 1024) setSidebarVisible(false);
+                }}
                 className={`group flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-all ${
                   isActive
-                    ? 'bg-brand-600 text-white shadow-sm'
+                    ? 'bg-brand-600 text-white shadow-xs'
                     : 'text-slate-300 hover:bg-navy-800 hover:text-white'
                 }`}
               >
@@ -234,25 +262,30 @@ export const AppLayout: React.FC = () => {
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
               Lender API Live
             </span>
-            <span className="text-[10px] text-slate-400">v2.4.0 (Static Demo)</span>
+            <span className="text-[10px] text-slate-400">v2.4.0</span>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Top Header */}
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
           <div className="flex items-center gap-3">
+            {/* Toggle Sidebar Button - Visible on all screen sizes! */}
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
+              onClick={() => setSidebarVisible(prev => !prev)}
+              title={sidebarVisible ? "Hide Sidebar Menu" : "Show Sidebar Menu"}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-2xs"
             >
-              <Menu className="h-5 w-5" />
+              {sidebarVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4 text-brand-600" />}
+              <span className="text-xs font-semibold text-slate-600 hidden md:inline">
+                {sidebarVisible ? 'Hide Menu' : 'Show Menu'}
+              </span>
             </button>
 
             {/* Breadcrumb Navigation */}
-            <nav className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500">
+            <nav className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 ml-1">
               {breadcrumbs.map((crumb, idx) => (
                 <React.Fragment key={crumb.path}>
                   {idx > 0 && <ChevronRight className="h-3 w-3 text-slate-400" />}
@@ -279,7 +312,7 @@ export const AppLayout: React.FC = () => {
               className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-400 hover:border-slate-300 hover:bg-slate-100 transition-colors"
             >
               <Search className="h-3.5 w-3.5 text-slate-400" />
-              <span className="hidden md:inline">Search quotations, proposals, customers...</span>
+              <span className="hidden md:inline">Search quotations, proposals...</span>
               <span className="md:hidden">Search</span>
               <kbd className="hidden md:inline rounded bg-white px-1.5 py-0.5 text-[10px] font-mono border border-slate-200 text-slate-500">
                 ⌘K
@@ -290,10 +323,10 @@ export const AppLayout: React.FC = () => {
             <div className="relative">
               <button
                 onClick={() => setQuickCreateOpen(!quickCreateOpen)}
-                className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-brand-700 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-xs hover:bg-brand-700 transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">New Transaction</span>
+                <span className="hidden sm:inline">New Action</span>
                 <ChevronDown className="h-3 w-3" />
               </button>
 
@@ -303,26 +336,26 @@ export const AppLayout: React.FC = () => {
                   onClick={() => setQuickCreateOpen(false)}
                 >
                   <NavLink
-                    to="/quotations/new"
+                    to="/quotations"
                     className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-700"
                   >
-                    <FileSpreadsheet className="h-4 w-4 text-brand-600" />
-                    Create Quotation
+                    <Calculator className="h-4 w-4 text-brand-600" />
+                    New Quotation
                   </NavLink>
                   <NavLink
-                    to="/proposals/new"
+                    to="/proposals"
                     className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-700"
                   >
                     <FileText className="h-4 w-4 text-emerald-600" />
-                    Create Proposal Wizard
+                    New Proposal Wizard
                   </NavLink>
                   <div className="my-1 border-t border-slate-100" />
                   <NavLink
-                    to="/customers"
+                    to="/workspace"
                     className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-700"
                   >
-                    <Users className="h-4 w-4 text-blue-600" />
-                    Add Customer
+                    <FolderKanban className="h-4 w-4 text-purple-600" />
+                    Open Workspace
                   </NavLink>
                 </div>
               )}
@@ -520,7 +553,7 @@ export const AppLayout: React.FC = () => {
                           >
                             <div>
                               <span className="font-semibold text-brand-600">{q.reference}</span>
-                              <span className="ml-2 text-slate-700">{q.customerName}</span>
+                              <span className="ml-2 text-slate-700">{q.title || q.customerName}</span>
                             </div>
                             <span className="text-slate-400">{q.dealerName}</span>
                           </div>

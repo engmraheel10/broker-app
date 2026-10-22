@@ -5,11 +5,10 @@ import { AppLayout } from './components/layout/AppLayout';
 
 // Pages
 import { DashboardPage } from './pages/DashboardPage';
-import { QuotationsListPage } from './pages/quotations/QuotationsListPage';
-import { QuotationFormPage } from './pages/quotations/QuotationFormPage';
+import { WorkspacePage } from './pages/workspace/WorkspacePage';
+import { QuotationSimplePage } from './pages/quotations/QuotationSimplePage';
 import { QuotationDetailPage } from './pages/quotations/QuotationDetailPage';
 
-import { ProposalsListPage } from './pages/proposals/ProposalsListPage';
 import { ProposalWizardPage } from './pages/proposals/ProposalWizardPage';
 import { ProposalDetailPage } from './pages/proposals/ProposalDetailPage';
 
@@ -17,6 +16,7 @@ import { CustomersListPage } from './pages/customers/CustomersListPage';
 import { CustomerDetailPage } from './pages/customers/CustomerDetailPage';
 
 import { AssetsListPage } from './pages/assets/AssetsListPage';
+import { InventoryPage } from './pages/inventory/InventoryPage';
 
 import { BrokersListPage } from './pages/brokers/BrokersListPage';
 import { BrokerDetailPage } from './pages/brokers/BrokerDetailPage';
@@ -39,14 +39,17 @@ export function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
 
-            {/* Quotations Module */}
-            <Route path="quotations" element={<QuotationsListPage />} />
-            <Route path="quotations/new" element={<QuotationFormPage />} />
-            <Route path="quotations/:id" element={<QuotationDetailPage />} />
-            <Route path="quotations/:id/edit" element={<QuotationFormPage />} />
+            {/* Workspace Module - View, filter, edit, update, delete Quotations & Proposals */}
+            <Route path="workspace" element={<WorkspacePage />} />
 
-            {/* Proposals Module */}
-            <Route path="proposals" element={<ProposalsListPage />} />
+            {/* Quotation Module - Single Simple Finance Quote Form */}
+            <Route path="quotations" element={<QuotationSimplePage />} />
+            <Route path="quotations/new" element={<QuotationSimplePage />} />
+            <Route path="quotations/:id" element={<QuotationDetailPage />} />
+            <Route path="quotations/:id/edit" element={<QuotationSimplePage />} />
+
+            {/* Proposal Module - Multi-step proposal creation (Customer, Assets, Lender) */}
+            <Route path="proposals" element={<ProposalWizardPage />} />
             <Route path="proposals/new" element={<ProposalWizardPage />} />
             <Route path="proposals/:id" element={<ProposalDetailPage />} />
             <Route path="proposals/:id/edit" element={<ProposalWizardPage />} />
@@ -54,6 +57,9 @@ export function App() {
             {/* Customer Directory */}
             <Route path="customers" element={<CustomersListPage />} />
             <Route path="customers/:id" element={<CustomerDetailPage />} />
+
+            {/* Dealer Asset Inventory */}
+            <Route path="inventory" element={<InventoryPage />} />
 
             {/* Assets Register */}
             <Route path="assets" element={<AssetsListPage />} />
