@@ -8,13 +8,13 @@ export interface PDFQuotationData {
   dealerName?: string;
   userName?: string;
   userRole?: string;
-  assetCategoryType: 'hard' | 'soft';
-  assetQuantity: number;
+  assetCategoryType?: 'hard' | 'soft';
+  assetQuantity?: number;
   assetCost: number;
-  vatTreatment: 'financed' | 'upfront' | 'zero';
+  vatTreatment: 'financed' | 'upfront' | 'zero' | 'deferred';
   vatAmount: number;
-  vatRate: number;
-  totalCostIncVAT: number;
+  vatRate?: number;
+  totalCostIncVAT?: number;
   financeType: string;
   deposit: number;
   loanAmount: number;
@@ -27,6 +27,28 @@ export interface PDFQuotationData {
   estimatedRepayment: number;
   totalInterest: number;
   totalRepayable: number;
+  productType?: string;
+  assetType?: string;
+  lenderName?: string;
+  programName?: string;
+  clientType?: string;
+  creditTier?: string;
+  commissionAmount?: number;
+  grossProfit?: number;
+  upfrontPayment?: number;
+  grossYield?: number;
+  netYield?: number;
+  apr?: number;
+  flatRateExclComm?: number;
+  flatRateInclComm?: number;
+  annualAdminFee?: number;
+  paymentMode?: string;
+  rateType?: string;
+  serviceAddOn?: number;
+  nonVatableAmount?: number;
+  subsidy?: number;
+  advancePayments?: number;
+  balloonCollection?: string;
   createdAt?: string;
   validUntil?: string;
 }
@@ -103,26 +125,32 @@ export function exportQuotationRepaymentPDF(
     ],
     [
       'Asset Classification',
-      `${data.assetCategoryType === 'hard' ? 'Hard Asset (Machinery / Vehicles)' : 'Soft Asset (Software / Tech)'} (Qty: ${data.assetQuantity})`,
+      data.assetType || `${data.assetCategoryType === 'soft' ? 'Soft Asset' : 'Hard Asset'} (Qty: ${data.assetQuantity || 1})`,
       'Loan Period / Term',
       `${data.termMonths} Months (${(data.termMonths / 12).toFixed(1)} Years)`,
+    ],
+    [
+      'Lender & Program',
+      `${data.lenderName || 'Direct Syndication'} • ${data.programName || 'Standard'}`,
+      'Client Type & Tier',
+      `${data.clientType || 'Commercial PLC'} • ${data.creditTier || 'Tier 1 Prime'}`,
     ],
     [
       'Net Asset Cost',
       formatCurrency(data.assetCost),
       'Annual Interest Rate',
-      formatPercent(data.interestRate),
+      `${formatPercent(data.interestRate)} (${data.rateType || 'Nominal Rate'})`,
     ],
     [
       'VAT Treatment',
-      `${data.vatTreatment === 'financed' ? '20% Financed' : data.vatTreatment === 'upfront' ? '20% Upfront' : '0% Exempt'} (${formatCurrency(data.vatAmount)})`,
-      'Payment Frequency',
-      data.paymentFrequency.toUpperCase(),
+      `${data.vatTreatment === 'deferred' ? 'VAT Deferred' : data.vatTreatment === 'upfront' ? 'VAT Upfront' : '20% Financed'} (${formatCurrency(data.vatAmount)})`,
+      'Payment Frequency / Mode',
+      `${data.paymentFrequency.toUpperCase()} (${data.paymentMode || 'Arrear'})`,
     ],
     [
       'Customer Deposit',
       formatCurrency(data.deposit),
-      'Monthly Installment',
+      'Periodic Installment',
       formatCurrency(data.estimatedRepayment),
     ],
     [
@@ -130,6 +158,12 @@ export function exportQuotationRepaymentPDF(
       formatCurrency(data.loanAmount),
       'Total Interest Payable',
       formatCurrency(data.totalInterest),
+    ],
+    [
+      'Commission / Profit',
+      `${formatCurrency(data.commissionAmount || 0)} (Profit: ${formatCurrency(data.grossProfit || 0)})`,
+      'APR (Representative)',
+      data.apr ? `${data.apr.toFixed(2)}%` : '—',
     ],
     [
       'Residual / Balloon',

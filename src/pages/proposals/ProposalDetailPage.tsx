@@ -24,7 +24,10 @@ import {
   Download,
   AlertTriangle,
   Landmark,
-  UserCheck
+  UserCheck,
+  Wrench,
+  Users,
+  Sparkles
 } from 'lucide-react';
 
 export const ProposalDetailPage: React.FC = () => {
@@ -33,7 +36,7 @@ export const ProposalDetailPage: React.FC = () => {
   const { getProposal, submitProposal, saveProposal, addToast } = useApp();
 
   const proposal = id ? getProposal(id) : undefined;
-  const [activeTab, setActiveTab] = useState<'overview' | 'assets' | 'financials' | 'documents' | 'activity'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'assets' | 'services' | 'principals' | 'financials' | 'documents' | 'activity'>('overview');
 
   if (!proposal) {
     return (
@@ -55,6 +58,9 @@ export const ProposalDetailPage: React.FC = () => {
 
   const calc = calculateFinance(proposal.assets, proposal.financeDetails);
   const canSubmit = proposal.status === 'ready_to_submit' || proposal.status === 'draft';
+  const servicesList = proposal.servicesAndAddOns || [];
+  const directorsList = proposal.directors || [];
+  const guarantor = proposal.businessPartner;
 
   const handleSubmit = () => {
     if (window.confirm(`Submit proposal ${proposal.reference} to ${proposal.lenderName}?`)) {
@@ -96,9 +102,15 @@ export const ProposalDetailPage: React.FC = () => {
               <span className="rounded-full bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
                 {proposal.lenderName}
               </span>
+              {proposal.preEligibilityScore && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+                  <Sparkles className="h-3 w-3 text-emerald-600" />
+                  Score: {proposal.preEligibilityScore}/100
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
-              Customer: <span className="font-semibold text-slate-800">{proposal.customerName}</span> • Broker: <span className="font-medium text-slate-700">{proposal.brokerName}</span> ({proposal.brokerOrg})
+              Customer: <span className="font-semibold text-slate-800">{proposal.customerName}</span> • Intermediary: <span className="font-medium text-slate-700">{proposal.brokerName}</span> ({proposal.brokerOrg})
             </p>
           </div>
 
@@ -173,11 +185,13 @@ export const ProposalDetailPage: React.FC = () => {
       </div>
 
       {/* Functional Tabs Navigation */}
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-6 text-xs font-medium">
+      <div className="border-b border-slate-200 bg-white rounded-xl shadow-xs overflow-x-auto">
+        <nav className="flex space-x-2 p-1.5 min-w-max text-xs font-medium">
           {[
             { id: 'overview', label: 'Overview', icon: Building2 },
             { id: 'assets', label: `Assets (${proposal.assets.length})`, icon: Truck },
+            { id: 'services', label: `Services & Add-Ons (${servicesList.length})`, icon: Wrench },
+            { id: 'principals', label: `Principals & Guarantor (${directorsList.length})`, icon: Users },
             { id: 'financials', label: 'Financials & Amortization', icon: Coins },
             { id: 'documents', label: `Documents (${proposal.documents.length})`, icon: FileCheck2 },
             { id: 'activity', label: `Activity Log (${proposal.activityHistory.length})`, icon: Activity },
@@ -188,13 +202,13 @@ export const ProposalDetailPage: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 border-b-2 py-3 px-1 transition-colors ${
+                className={`flex items-center gap-2 rounded-lg px-3.5 py-2 transition-colors ${
                   isActive
-                    ? 'border-brand-600 text-brand-600 font-bold'
-                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                    ? 'bg-brand-600 text-white font-bold shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -208,7 +222,6 @@ export const ProposalDetailPage: React.FC = () => {
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
-            {/* Decision Callout Banner if status is approved or under_review */}
             {proposal.status === 'approved' && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-5">
                 <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
@@ -239,33 +252,40 @@ export const ProposalDetailPage: React.FC = () => {
 
             {/* Stakeholders Cards */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Borrowing Customer
                 </span>
-                <h3 className="mt-1 text-sm font-bold text-slate-900">{proposal.customerName}</h3>
-                <p className="text-xs text-slate-600">{proposal.contactPerson}</p>
-                <div className="mt-3 space-y-1 text-xs text-slate-500">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">{proposal.customerName}</h3>
+                  <p className="text-xs text-slate-500">{proposal.clientType || 'Corporate Borrower'} • {proposal.creditTier || 'Tier 1'}</p>
+                </div>
+                <div className="space-y-1 text-xs text-slate-600 border-t border-slate-100 pt-2">
+                  <p>Contact: <span className="font-semibold text-slate-800">{proposal.contactPerson}</span></p>
                   <p>Email: <span className="text-slate-800">{proposal.email}</span></p>
                   <p>Phone: <span className="text-slate-800">{proposal.phone}</span></p>
                   {proposal.companyNumber && (
-                    <p>Company No: <span className="font-mono text-slate-800">{proposal.companyNumber}</span></p>
+                    <p>Companies House No: <span className="font-mono text-slate-800">{proposal.companyNumber}</span></p>
                   )}
                   {proposal.address && (
-                    <p className="text-[11px] pt-1 text-slate-600 border-t border-slate-100">{proposal.address}</p>
+                    <p className="text-[11px] pt-1 text-slate-500">{proposal.address}</p>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Intermediary Broker & Dealer
+                  Intermediary & Channel
                 </span>
-                <h3 className="mt-1 text-sm font-bold text-slate-900">{proposal.brokerName}</h3>
-                <p className="text-xs text-slate-600">{proposal.brokerOrg}</p>
-                <div className="mt-3 space-y-1 text-xs text-slate-500">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">{proposal.brokerName}</h3>
+                  <p className="text-xs text-slate-500">{proposal.brokerOrg}</p>
+                </div>
+                <div className="space-y-1 text-xs text-slate-600 border-t border-slate-100 pt-2">
                   <p>Supplying Dealer: <span className="text-slate-800 font-medium">{proposal.dealerName}</span></p>
-                  <p>Lender Channel: <span className="text-slate-800 font-medium">{proposal.lenderName}</span></p>
+                  <p>Target Funder: <span className="text-slate-800 font-medium">{proposal.lenderName}</span></p>
+                  <p>Facility Program: <span className="text-slate-800">{proposal.programName || 'Commercial Line'}</span></p>
+                  <p>Regulated Status: <span className="text-slate-800">{proposal.productType || 'Non-Regulated'}</span></p>
                 </div>
               </div>
             </div>
@@ -273,7 +293,7 @@ export const ProposalDetailPage: React.FC = () => {
             {/* Assets Preview Section */}
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-semibold text-slate-900">Equipment Pledged</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Equipment Pledged ({proposal.assets.length})</h3>
                 <button
                   onClick={() => setActiveTab('assets')}
                   className="text-xs font-semibold text-brand-600 hover:underline"
@@ -286,7 +306,7 @@ export const ProposalDetailPage: React.FC = () => {
                   <div key={i} className="py-2.5 flex items-center justify-between text-xs">
                     <div>
                       <p className="font-semibold text-slate-900">{a.quantity}x {a.manufacturer} {a.model}</p>
-                      <p className="text-[11px] text-slate-500">{a.category}</p>
+                      <p className="text-[11px] text-slate-500">{a.category} {a.serialNumber ? `• VIN: ${a.serialNumber}` : ''}</p>
                     </div>
                     <span className="font-bold text-slate-900">
                       {formatCurrency((a.quantity * a.unitPrice) + a.additionalCosts)}
@@ -312,8 +332,8 @@ export const ProposalDetailPage: React.FC = () => {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Pledged Asset Schedule</h3>
-              <p className="text-xs text-slate-500">Detailed list of equipment pledged for financing collateral</p>
+              <h3 className="text-sm font-bold text-slate-900">Pledged Asset Collateral Schedule</h3>
+              <p className="text-xs text-slate-500">Commercial machinery, vehicles, and plant pledged for facility security</p>
             </div>
             <span className="text-xs font-semibold text-slate-700">Total Asset Value: {formatCurrency(calc.totalCostIncVAT)}</span>
           </div>
@@ -324,10 +344,11 @@ export const ProposalDetailPage: React.FC = () => {
                 <tr>
                   <th className="p-3 font-semibold">Category</th>
                   <th className="p-3 font-semibold">Manufacturer & Model</th>
-                  <th className="p-3 font-semibold">Specification</th>
+                  <th className="p-3 font-semibold">Serial / VIN</th>
+                  <th className="p-3 font-semibold">Supplier / Vendor</th>
                   <th className="p-3 font-semibold text-center">Qty</th>
                   <th className="p-3 font-semibold text-right">Unit Net</th>
-                  <th className="p-3 font-semibold text-right">Extras</th>
+                  <th className="p-3 font-semibold text-right">Trade-In</th>
                   <th className="p-3 font-semibold text-right">Total Net</th>
                 </tr>
               </thead>
@@ -336,12 +357,13 @@ export const ProposalDetailPage: React.FC = () => {
                   <tr key={i}>
                     <td className="p-3 text-slate-500">{a.category}</td>
                     <td className="p-3 font-semibold text-slate-900">{a.manufacturer} {a.model}</td>
-                    <td className="p-3 text-slate-600">{a.description || 'Standard specification'}</td>
+                    <td className="p-3 font-mono text-[11px] text-slate-600">{a.serialNumber || '—'}</td>
+                    <td className="p-3 text-slate-600">{a.supplierName || '—'}</td>
                     <td className="p-3 text-center font-medium">{a.quantity}</td>
                     <td className="p-3 text-right">{formatCurrency(a.unitPrice)}</td>
-                    <td className="p-3 text-right text-slate-500">{formatCurrency(a.additionalCosts)}</td>
+                    <td className="p-3 text-right text-emerald-700">{a.tradeInAllowance ? `-${formatCurrency(a.tradeInAllowance)}` : '£0.00'}</td>
                     <td className="p-3 text-right font-bold text-slate-900">
-                      {formatCurrency((a.quantity * a.unitPrice) + a.additionalCosts)}
+                      {formatCurrency((a.quantity * a.unitPrice) + a.additionalCosts - (a.tradeInAllowance || 0))}
                     </td>
                   </tr>
                 ))}
@@ -351,7 +373,113 @@ export const ProposalDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* 3. FINANCIALS TAB */}
+      {/* 3. SERVICES & ADD-ONS TAB */}
+      {activeTab === 'services' && (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Services & Add-Ons Schedule ({servicesList.length})</h3>
+              <p className="text-xs text-slate-500">Secondary warranties, insurance agreements, GAP policies, and fee receivables</p>
+            </div>
+          </div>
+
+          {servicesList.length === 0 ? (
+            <p className="py-8 text-center text-xs text-slate-400 italic">No secondary services or add-on packages attached to this proposal.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Description</th>
+                    <th className="py-2.5 px-3">Receivable Type</th>
+                    <th className="py-2.5 px-3">Application Method</th>
+                    <th className="py-2.5 px-3">Amount</th>
+                    <th className="py-2.5 px-3">Tax</th>
+                    <th className="py-2.5 px-3">Underwriter</th>
+                    <th className="py-2.5 px-3">Contact</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {servicesList.map((srv) => (
+                    <tr key={srv.id} className="hover:bg-slate-50/70">
+                      <td className="py-2.5 px-3 font-semibold text-slate-900">{srv.serviceType}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{srv.description}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="rounded bg-indigo-50 text-indigo-700 px-1.5 py-0.5 text-[10px] font-semibold border border-indigo-200">
+                          {srv.receivableType}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600">{srv.applicationMethod}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">{formatCurrency(srv.totalAmount)}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{formatCurrency(srv.taxAmount)}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{srv.insuranceCompany || '—'}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">{srv.contactNumber || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. PRINCIPALS & GUARANTOR TAB */}
+      {activeTab === 'principals' && (
+        <div className="space-y-6">
+          {/* Directors Table */}
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 border-b pb-3">Statutory Directors & Key Principals</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase text-slate-500">
+                    <th className="py-2 px-3">Full Name</th>
+                    <th className="py-2 px-3">Email</th>
+                    <th className="py-2 px-3">Contact Number</th>
+                    <th className="py-2 px-3">DOB</th>
+                    <th className="py-2 px-3">Nationality</th>
+                    <th className="py-2 px-3">Homeowner Status</th>
+                    <th className="py-2 px-3">Time At Address</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {directorsList.map((d) => (
+                    <tr key={d.id}>
+                      <td className="py-2 px-3 font-semibold text-slate-900">{d.fullName}</td>
+                      <td className="py-2 px-3 text-slate-600">{d.email}</td>
+                      <td className="py-2 px-3 font-mono">{d.contactNumber}</td>
+                      <td className="py-2 px-3">{d.dateOfBirth}</td>
+                      <td className="py-2 px-3">{d.nationality}</td>
+                      <td className="py-2 px-3 text-emerald-700 font-medium">{d.homeownerStatus}</td>
+                      <td className="py-2 px-3 text-slate-500">{d.timeAtAddress}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Guarantor Details */}
+          {guarantor?.enabled && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 border-b pb-2">
+                Business Partner / Guarantor: {guarantor.companyName} ({guarantor.role})
+              </h3>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>Entity Type: <strong>{guarantor.clientType}</strong></div>
+                <div>Credit Tier: <strong>{guarantor.creditTier}</strong></div>
+                <div>Registration No: <span className="font-mono">{guarantor.companyRegistrationNumber || '—'}</span></div>
+                <div>Email: {guarantor.emailAddress}</div>
+                <div>Trading As: {guarantor.tradingAs || '—'}</div>
+                <div>Nature of Business: {guarantor.natureOfBusiness || '—'}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. FINANCIALS TAB */}
       {activeTab === 'financials' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
@@ -394,7 +522,7 @@ export const ProposalDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* 4. DOCUMENTS TAB */}
+      {/* 6. DOCUMENTS TAB */}
       {activeTab === 'documents' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
@@ -432,7 +560,7 @@ export const ProposalDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* 5. ACTIVITY TAB */}
+      {/* 7. ACTIVITY TAB */}
       {activeTab === 'activity' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
           <div className="border-b pb-3">

@@ -9,6 +9,14 @@ export interface AssetLineItem {
   quantity: number;
   unitPrice: number;
   additionalCosts: number;
+  assetType?: string;
+  yearOfManufacture?: string | number;
+  serialNumber?: string;
+  supplierName?: string;
+  supplierInvoiceRef?: string;
+  tradeInAllowance?: number;
+  locationAddress?: string;
+  depositAllocated?: number;
 }
 
 export type FinanceType = 'hire_purchase' | 'finance_lease' | 'operating_lease' | 'contract_hire' | 'other';
@@ -22,8 +30,33 @@ export interface FinanceDetails {
   interestRate: number; // Annual %
   paymentFrequency: PaymentFrequency;
   balloonPayment: number;
+  balloonType?: 'amount' | 'percentage';
+  balloonCollection?: string;
   documentationFee: number;
   optionToPurchaseFee: number;
+  annualAdminFee?: number;
+  paymentMode?: 'Arrear' | 'Advance';
+  rateType?: 'Nominal Rate' | 'Flat Rate' | 'Effective Rate';
+  advancePayments?: number;
+  commissionValue?: number;
+  commissionType?: 'amount' | 'percentage';
+  commissionAmount?: number;
+  subsidy?: number;
+  serviceAddOn?: number;
+  nonVatableAmount?: number;
+  calculateMode?: string;
+  grossYield?: number;
+  netYield?: number;
+  apr?: number;
+  flatRateExclComm?: number;
+  flatRateInclComm?: number;
+  upfrontPayment?: number;
+  grossProfit?: number;
+  productType?: string;
+  assetType?: string;
+  programName?: string;
+  clientType?: string;
+  creditTier?: string;
 }
 
 export type AssetCategoryType = 'hard' | 'soft';
@@ -39,7 +72,7 @@ export interface Quotation {
   assetCost?: number;
   vatAmount?: number;
   vatRate?: number;
-  vatTreatment?: 'financed' | 'upfront' | 'zero';
+  vatTreatment?: 'financed' | 'upfront' | 'zero' | 'deferred';
   loanAmount?: number;
   customerType?: CustomerType;
   customerName?: string;
@@ -57,6 +90,31 @@ export interface Quotation {
   notes?: string;
   convertedProposalId?: string;
   inventoryItemId?: string;
+  productType?: string;
+  assetType?: string;
+  lenderName?: string;
+  programName?: string;
+  clientType?: string;
+  creditTier?: string;
+  serviceAddOn?: number;
+  nonVatableAmount?: number;
+  commissionValue?: number;
+  commissionType?: 'amount' | 'percentage';
+  commissionAmount?: number;
+  rateType?: 'Nominal Rate' | 'Flat Rate' | 'Effective Rate';
+  advancePayments?: number;
+  regularPayments?: number;
+  balloonCollection?: string;
+  subsidy?: number;
+  annualAdminFee?: number;
+  paymentMode?: 'Arrear' | 'Advance';
+  grossYield?: number;
+  netYield?: number;
+  apr?: number;
+  flatRateExclComm?: number;
+  flatRateInclComm?: number;
+  upfrontPayment?: number;
+  grossProfit?: number;
   createdAt: string;
   updatedAt: string;
   validUntil: string;
@@ -92,11 +150,73 @@ export interface ActivityItem {
   badgeType?: 'default' | 'success' | 'warning' | 'info' | 'danger';
 }
 
+export interface DirectorDetail {
+  id: string;
+  fullName: string;
+  email: string;
+  contactNumber: string;
+  dateOfBirth: string;
+  nationality: string;
+  homeownerStatus: string;
+  timeAtAddress: string;
+}
+
+export interface ProposalAddress {
+  id: string;
+  type: 'registered' | 'trading' | 'director_residential' | 'other';
+  buildingNameNumber: string;
+  street: string;
+  townCity: string;
+  county?: string;
+  postcode: string;
+  country: string;
+  timeAtAddress?: string;
+}
+
+export interface ServiceAddOnItem {
+  id: string;
+  serviceType: string;
+  description: string;
+  receivableType: string;
+  paymentFrequency: string;
+  applicationMethod: string;
+  totalAmount: number;
+  taxAmount: number;
+  insuranceCompany?: string;
+  contactNumber?: string;
+}
+
+export interface BusinessPartnerDetails {
+  enabled: boolean;
+  role: string;
+  clientType: string;
+  companyName: string;
+  creditTier: string;
+  companyRegistrationNumber?: string;
+  emailAddress: string;
+  contactNumber?: string;
+  landlineNumber?: string;
+  tradingAs?: string;
+  natureOfBusiness?: string;
+  yearsBusinessEstablished?: string;
+  vatStatus?: string;
+  contactPerson?: {
+    fullName: string;
+    email: string;
+    phone: string;
+  };
+  directors?: DirectorDetail[];
+  addresses?: ProposalAddress[];
+}
+
 export interface Proposal {
   id: string;
   reference: string;
   quotationId?: string;
   quotationReference?: string;
+  proposalName?: string;
+  preEligibilityScore?: string | number;
+  diaryNotes?: string;
   customerType: CustomerType;
   customerName: string;
   contactPerson: string;
@@ -104,11 +224,25 @@ export interface Proposal {
   phone: string;
   address: string;
   companyNumber?: string;
+  clientType?: string;
+  creditTier?: string;
+  landlineNumber?: string;
+  tradingAs?: string;
+  natureOfBusiness?: string;
+  yearsBusinessEstablished?: string;
+  vatStatus?: string;
   dealerId: string;
   dealerName: string;
   brokerId: string;
   brokerName: string;
   brokerOrg: string;
+  productType?: string;
+  programName?: string;
+  currency?: string;
+  directors?: DirectorDetail[];
+  addresses?: ProposalAddress[];
+  businessPartner?: BusinessPartnerDetails;
+  servicesAndAddOns?: ServiceAddOnItem[];
   assets: AssetLineItem[];
   financeDetails: FinanceDetails;
   documents: SupportingDoc[];

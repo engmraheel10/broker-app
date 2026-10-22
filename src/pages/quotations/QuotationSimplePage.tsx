@@ -2,7 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { FinanceType, PaymentFrequency, AssetCategoryType, Quotation, InventoryItem } from '../../types';
-import { formatCurrency, formatPercent, formatDate, generateAmortizationSchedule, generateRef } from '../../utils/calculations';
+import {
+  formatCurrency,
+  formatPercent,
+  formatDate,
+  generateAmortizationSchedule,
+  generateRef,
+  calculateQuoteBreakdown,
+  QuoteCalculationInput
+} from '../../utils/calculations';
 import { exportQuotationRepaymentPDF, PDFQuotationData } from '../../utils/pdfGenerator';
 import {
   Calculator,
@@ -18,14 +26,30 @@ import {
   Package,
   Lock,
   ChevronDown,
-  Sparkles,
-  ExternalLink,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  MoreVertical,
+  SlidersHorizontal,
   Calendar,
-  DollarSign,
+  Pencil,
   Info,
   CheckCircle2,
-  Image as ImageIcon
+  ExternalLink,
+  Sparkles,
+  ArrowUpRight,
+  X,
+  FileText
 } from 'lucide-react';
+
+const PRODUCT_TABS = [
+  { id: 'personal_contract_purchase', label: 'Personal Contract Purchase' },
+  { id: 'hire_purchase', label: 'Hire Purchase' },
+  { id: 'finance_lease', label: 'Finance Lease' },
+  { id: 'operating_lease', label: 'Operating Lease' },
+  { id: 'contract_hire', label: 'Contract Hire' },
+  { id: 'commercial_loan', label: 'Commercial Loan' },
+];
 
 export const QuotationSimplePage: React.FC = () => {
   const navigate = useNavigate();
@@ -39,1087 +63,1388 @@ export const QuotationSimplePage: React.FC = () => {
       : inventory;
   }, [inventory, isDealer, currentUser.organization]);
 
-  // Initial reference ID
+  // Initial quotation reference
   const [quotationRef] = useState(() => generateRef('QT'));
 
-  // Selected Inventory Item (for Dealer Admin selection)
+  // 1. Top Bar State
+  const [quotationName, setQuotationName] = useState('');
+  const [productType, setProductType] = useState('Un Regulated');
+  const [assetType, setAssetType] = useState('Hard Asset - Waste - Scrap & Recycling');
+  const [lenderName, setLenderName] = useState('Ultimate Finance');
+  const [programName, setProgramName] = useState('Program Name');
+  const [clientType, setClientType] = useState('PLC');
+  const [creditTier, setCreditTier] = useState('Credit Tier');
+
+  // Active product pill
+  const [selectedProduct, setSelectedProduct] = useState('hire_purchase');
+  const [calculateMode, setCalculateMode] = useState('Periodic Payment');
+
+  // 2. Left Column: Input Fields
+  const [quoteDate, setQuoteDate] = useState('22/10/2026');
+  const [assetCost, setAssetCost] = useState<number>(1000.0);
+  const [serviceAddOn, setServiceAddOn] = useState<number>(0.0);
+  const [nonVatableAmount, setNonVatableAmount] = useState<number>(0.0);
+
+  const [depositValue, setDepositValue] = useState<number>(0.0);
+  const [depositType, setDepositType] = useState<'amount' | 'percentage'>('amount');
+
+  const [commissionValue, setCommissionValue] = useState<number>(3.0);
+  const [commissionType, setCommissionType] = useState<'amount' | 'percentage'>('percentage');
+
+  const [rate, setRate] = useState<number>(8.0);
+  const [rateType, setRateType] = useState<'Nominal Rate' | 'Flat Rate' | 'Effective Rate'>('Nominal Rate');
+
+  const [advancePayments, setAdvancePayments] = useState<number>(0);
+  const [regularPayments, setRegularPayments] = useState<number>(12);
+
+  const [balloonValue, setBalloonValue] = useState<number>(0.0);
+  const [balloonType, setBalloonType] = useState<'amount' | 'percentage'>('amount');
+  const [balloonCollection, setBalloonCollection] = useState('With Last Payment');
+
+  const [subsidy, setSubsidy] = useState<number>(0.0);
+
+  // VAT Treatment
+  const [vatTreatment, setVatTreatment] = useState<'upfront' | 'deferred'>('upfront');
+  const [customVatAmount, setCustomVatAmount] = useState<string>('0.00');
+
+  // Advanced toggles
+  const [irregularPaymentsActive, setIrregularPaymentsActive] = useState(false);
+  const [stepPaymentsActive, setStepPaymentsActive] = useState(false);
+  const [stepStructureActive, setStepStructureActive] = useState(false);
+
+  // 3. Right Column: Rates & Information
+  const [documentFee, setDocumentFee] = useState<number>(195.0);
+  const [otpFee, setOtpFee] = useState<number>(200.0);
+  const [annualAdminFee, setAnnualAdminFee] = useState<number>(35.0);
+  const [paymentFrequency, setPaymentFrequency] = useState<'monthly' | 'quarterly' | 'annually'>('monthly');
+  const [paymentMode, setPaymentMode] = useState<'Arrear' | 'Advance'>('Arrear');
+
+  // UI accordion / collapsible states
+  const [upfrontGroupOpen, setUpfrontGroupOpen] = useState(true);
+  const [informationOpen, setInformationOpen] = useState(true);
+  const [editingFee, setEditingFee] = useState<string | null>(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [rateCardsModalOpen, setRateCardsModalOpen] = useState(false);
+  const [comparisonModalOpen, setComparisonModalOpen] = useState(false);
+
+  // Selected Dealer Inventory Item (if selected from stock)
   const initialInventoryId = searchParams.get('inventoryId');
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(() => {
     if (initialInventoryId) {
       return inventory.find(i => i.id === initialInventoryId) || null;
     }
-    // Default to first dealer inventory item if dealer
-    if (isDealer && dealerInventory.length > 0) {
-      return dealerInventory[0];
-    }
     return null;
   });
 
-  const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
-
-  // Quotation identifier / reference
-  const [title, setTitle] = useState(selectedInventoryItem ? selectedInventoryItem.title : 'New Asset Finance Quote');
-
-  // Asset Classification
-  const [assetCategoryType, setAssetCategoryType] = useState<AssetCategoryType>(
-    selectedInventoryItem ? selectedInventoryItem.categoryType : 'hard'
-  );
-  const [assetQuantity, setAssetQuantity] = useState<number>(1);
-  const [assetCost, setAssetCost] = useState<number>(
-    selectedInventoryItem ? selectedInventoryItem.price : 50000
-  );
-
-  // Sync when selected inventory item changes
+  // When an inventory item is picked
   useEffect(() => {
     if (selectedInventoryItem) {
-      setTitle(selectedInventoryItem.title);
-      setAssetCategoryType(selectedInventoryItem.categoryType);
+      setQuotationName(selectedInventoryItem.title);
       setAssetCost(selectedInventoryItem.price);
+      setAssetType(
+        selectedInventoryItem.categoryType === 'hard'
+          ? `Hard Asset - ${selectedInventoryItem.categoryName}`
+          : `Soft Asset - ${selectedInventoryItem.categoryName}`
+      );
     }
   }, [selectedInventoryItem]);
 
-  // If user role changes to dealer and nothing selected, select first inventory item
-  useEffect(() => {
-    if (isDealer && !selectedInventoryItem && dealerInventory.length > 0) {
-      setSelectedInventoryItem(dealerInventory[0]);
-    }
-  }, [isDealer, dealerInventory, selectedInventoryItem]);
+  // Live Calculations using calculateQuoteBreakdown
+  const calcOutput = useMemo(() => {
+    const input: QuoteCalculationInput = {
+      assetCost,
+      serviceAddOn,
+      nonVatableAmount,
+      vatTreatment,
+      customVatAmount: customVatAmount === '' ? undefined : parseFloat(customVatAmount),
+      depositValue,
+      depositType,
+      subsidy,
+      commissionValue,
+      commissionType,
+      rate,
+      rateType,
+      advancePayments,
+      regularPayments,
+      balloonValue,
+      balloonType,
+      balloonCollection,
+      documentFee,
+      otpFee,
+      annualAdminFee,
+      paymentFrequency,
+      paymentMode,
+    };
+    return calculateQuoteBreakdown(input);
+  }, [
+    assetCost,
+    serviceAddOn,
+    nonVatableAmount,
+    vatTreatment,
+    customVatAmount,
+    depositValue,
+    depositType,
+    subsidy,
+    commissionValue,
+    commissionType,
+    rate,
+    rateType,
+    advancePayments,
+    regularPayments,
+    balloonValue,
+    balloonType,
+    balloonCollection,
+    documentFee,
+    otpFee,
+    annualAdminFee,
+    paymentFrequency,
+    paymentMode,
+  ]);
 
-  // VAT Treatment
-  const [vatTreatment, setVatTreatment] = useState<'financed' | 'upfront' | 'zero'>('financed');
-  const [vatRate, setVatRate] = useState<number>(20);
+  // Auto calculate VAT helper button
+  const handleCalculateVAT = () => {
+    const vatable = Math.max(0, assetCost - nonVatableAmount);
+    const standardVat = Math.round(vatable * 0.20 * 100) / 100;
+    setCustomVatAmount(standardVat.toFixed(2));
+    addToast('VAT Calculated', `Standard 20% VAT applied: ${formatCurrency(standardVat)}`, 'info');
+  };
 
-  // Deposit
-  const [depositType, setDepositType] = useState<'amount' | 'percentage'>('amount');
-  const [depositValue, setDepositValue] = useState<number>(10000);
-
-  // Finance Terms
-  const [financeType, setFinanceType] = useState<FinanceType>('hire_purchase');
-  const [termMonths, setTermMonths] = useState<number>(48);
-  const [interestRate, setInterestRate] = useState<number>(6.5);
-  const [paymentFrequency, setPaymentFrequency] = useState<PaymentFrequency>('monthly');
-  const [balloonPayment, setBalloonPayment] = useState<number>(0);
-  const [documentationFee, setDocumentationFee] = useState<number>(295);
-  const [optionToPurchaseFee, setOptionToPurchaseFee] = useState<number>(150);
-  const [notes, setNotes] = useState<string>('');
-
-  // UI state for repayment schedule view
-  const [showAllScheduleMonths, setShowAllScheduleMonths] = useState(false);
-
-  // Calculations
-  const totalNetAssetCost = (Number(assetQuantity) || 1) * (Number(assetCost) || 0);
-
-  const vatAmount =
-    vatTreatment === 'zero'
-      ? 0
-      : Math.round(totalNetAssetCost * (vatRate / 100) * 100) / 100;
-
-  const totalCostIncVAT = totalNetAssetCost + vatAmount;
-
-  // Deposit calculation
-  let depositAmount = Number(depositValue) || 0;
-  if (depositType === 'percentage') {
-    const base = vatTreatment === 'financed' ? totalCostIncVAT : totalNetAssetCost;
-    depositAmount = Math.round(((base * depositAmount) / 100) * 100) / 100;
-  }
-
-  // Loan Amount
-  const baseToFinance = vatTreatment === 'financed' ? totalCostIncVAT : totalNetAssetCost;
-  const loanAmount = Math.max(0, baseToFinance - depositAmount);
-
-  // Repayment Calculation (standard amortized formula with optional balloon)
-  const monthlyRate = (interestRate / 100) / 12;
-  const n = Math.max(1, termMonths);
-  const balloon = Number(balloonPayment) || 0;
-
-  let monthlyRepayment = 0;
-  if (monthlyRate === 0) {
-    monthlyRepayment = (loanAmount - balloon) / n;
-  } else {
-    const factor = Math.pow(1 + monthlyRate, -n);
-    monthlyRepayment = (loanAmount - balloon * factor) * (monthlyRate / (1 - factor));
-  }
-
-  let freqMultiplier = 1;
-  if (paymentFrequency === 'quarterly') freqMultiplier = 3;
-  if (paymentFrequency === 'annually') freqMultiplier = 12;
-
-  const periodicRepayment = Math.max(0, Math.round(monthlyRepayment * freqMultiplier * 100) / 100);
-  const totalPayments = (termMonths / freqMultiplier) * periodicRepayment;
-  const docFees = Number(documentationFee || 0) + (financeType === 'hire_purchase' ? Number(optionToPurchaseFee || 0) : 0);
-  const totalRepayable = totalPayments + depositAmount + balloon + docFees;
-  const totalInterest = Math.max(0, totalRepayable - baseToFinance);
-
-  // Full Month-by-Month Amortization Schedule
+  // Month-by-month Amortization Schedule
   const amortizationSchedule = useMemo(() => {
     return generateAmortizationSchedule(
-      loanAmount,
-      interestRate,
-      termMonths,
-      balloon,
-      documentationFee,
-      financeType === 'hire_purchase' ? optionToPurchaseFee : 0
+      calcOutput.financeAmount,
+      rate,
+      regularPayments,
+      calcOutput.balloonAmount,
+      documentFee,
+      selectedProduct === 'hire_purchase' ? otpFee : 0
     );
-  }, [loanAmount, interestRate, termMonths, balloon, documentationFee, optionToPurchaseFee, financeType]);
+  }, [calcOutput.financeAmount, rate, regularPayments, calcOutput.balloonAmount, documentFee, otpFee, selectedProduct]);
 
-  // Export PDF Handler
+  // Download PDF Handler
   const handleDownloadPDF = () => {
     const pdfData: PDFQuotationData = {
       reference: quotationRef,
-      title: title || (selectedInventoryItem ? selectedInventoryItem.title : 'Asset Finance Quotation'),
+      title: quotationName || 'Asset Finance Quotation',
       dealerName: currentUser.organization,
       userName: currentUser.name,
       userRole: currentUser.role,
-      assetCategoryType,
-      assetQuantity,
-      assetCost: totalNetAssetCost,
+      assetType,
+      assetCost,
       vatTreatment,
-      vatAmount,
-      vatRate,
-      totalCostIncVAT,
-      financeType,
-      deposit: depositAmount,
-      loanAmount,
-      termMonths,
-      interestRate,
+      vatAmount: calcOutput.vatAmount,
+      financeType: selectedProduct,
+      deposit: calcOutput.depositAmount,
+      loanAmount: calcOutput.financeAmount,
+      termMonths: regularPayments,
+      interestRate: rate,
       paymentFrequency,
-      balloonPayment: balloon,
-      documentationFee,
-      optionToPurchaseFee: financeType === 'hire_purchase' ? optionToPurchaseFee : 0,
-      estimatedRepayment: periodicRepayment,
-      totalInterest,
-      totalRepayable,
+      balloonPayment: calcOutput.balloonAmount,
+      documentationFee: documentFee,
+      optionToPurchaseFee: otpFee,
+      estimatedRepayment: calcOutput.periodicPayment,
+      totalInterest: calcOutput.totalInterest,
+      totalRepayable: calcOutput.totalRepayable,
+      productType,
+      lenderName,
+      programName,
+      clientType,
+      creditTier,
+      commissionAmount: calcOutput.commissionAmount,
+      grossProfit: calcOutput.grossProfit,
+      upfrontPayment: calcOutput.upfrontPayment,
+      grossYield: calcOutput.grossYield,
+      netYield: calcOutput.netYield,
+      apr: calcOutput.apr,
+      flatRateExclComm: calcOutput.flatRateExclComm,
+      flatRateInclComm: calcOutput.flatRateInclComm,
+      annualAdminFee,
+      paymentMode,
+      rateType,
+      serviceAddOn,
+      nonVatableAmount,
+      subsidy,
+      advancePayments,
+      balloonCollection,
       createdAt: new Date().toISOString(),
     };
 
     exportQuotationRepaymentPDF(pdfData, amortizationSchedule);
-    addToast('PDF Downloaded', `Repayment schedule for ${quotationRef} downloaded successfully.`, 'success');
+    addToast('PDF Downloaded', `Official quotation & schedule for ${quotationRef} downloaded.`, 'success');
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
+  // Reset Handler
   const handleReset = () => {
-    if (isDealer && dealerInventory.length > 0) {
-      setSelectedInventoryItem(dealerInventory[0]);
-    } else {
-      setSelectedInventoryItem(null);
-      setTitle('New Asset Finance Quote');
-      setAssetCategoryType('hard');
-      setAssetCost(50000);
-    }
-    setAssetQuantity(1);
-    setVatTreatment('financed');
-    setVatRate(20);
+    setQuotationName('');
+    setAssetCost(1000.0);
+    setServiceAddOn(0.0);
+    setNonVatableAmount(0.0);
+    setDepositValue(0.0);
     setDepositType('amount');
-    setDepositValue(10000);
-    setFinanceType('hire_purchase');
-    setTermMonths(48);
-    setInterestRate(6.5);
+    setCommissionValue(3.0);
+    setCommissionType('percentage');
+    setRate(8.0);
+    setRateType('Nominal Rate');
+    setAdvancePayments(0);
+    setRegularPayments(12);
+    setBalloonValue(0.0);
+    setBalloonType('amount');
+    setBalloonCollection('With Last Payment');
+    setSubsidy(0.0);
+    setVatTreatment('upfront');
+    setCustomVatAmount('0.00');
+    setDocumentFee(195.0);
+    setOtpFee(200.0);
+    setAnnualAdminFee(35.0);
     setPaymentFrequency('monthly');
-    setBalloonPayment(0);
-    setDocumentationFee(295);
-    setOptionToPurchaseFee(150);
-    setNotes('');
+    setPaymentMode('Arrear');
+    setSelectedInventoryItem(null);
+    addToast('Calculator Reset', 'All financial fields reset to initial defaults.', 'info');
   };
 
-  const handleSave = () => {
-    const newQuotation: Partial<Quotation> = {
+  // Save Quotation Handler
+  const handleSaveQuotation = () => {
+    const q: Partial<Quotation> = {
       reference: quotationRef,
-      title,
-      assetCategoryType,
-      assetQuantity,
-      assetCost: totalNetAssetCost,
-      vatAmount,
-      vatRate,
+      title: quotationName || 'Commercial Finance Quote',
+      customerName: quotationName || 'Commercial Client',
+      productType,
+      assetType,
+      lenderName,
+      programName,
+      clientType,
+      creditTier,
+      assetCategoryType: assetType.toLowerCase().includes('soft') ? 'soft' : 'hard',
+      assetQuantity: 1,
+      assetCost,
+      serviceAddOn,
+      nonVatableAmount,
+      vatAmount: calcOutput.vatAmount,
       vatTreatment,
-      loanAmount,
-      customerName: title,
+      loanAmount: calcOutput.financeAmount,
       dealerId: selectedInventoryItem?.dealerId || 'dlr-1',
       dealerName: currentUser.organization || 'Atlas Plant & Machinery Ltd',
       inventoryItemId: selectedInventoryItem?.id,
       assets: [
         {
           id: `ast-${Date.now()}`,
-          category: assetCategoryType === 'hard' ? 'Hard Machinery / Commercial Equipment' : 'Soft Asset / Technology',
-          manufacturer: selectedInventoryItem?.manufacturer || 'Asset Line',
-          model: selectedInventoryItem?.model || title,
-          description: selectedInventoryItem?.description || `${assetCategoryType.toUpperCase()} Asset (${assetQuantity} unit${assetQuantity > 1 ? 's' : ''})`,
-          quantity: assetQuantity,
+          category: assetType,
+          manufacturer: selectedInventoryItem?.manufacturer || 'Asset Manufacturer',
+          model: selectedInventoryItem?.model || quotationName || 'Commercial Equipment',
+          description: selectedInventoryItem?.description || `Quoted facility under ${lenderName}`,
+          quantity: 1,
           unitPrice: assetCost,
-          additionalCosts: 0,
+          additionalCosts: serviceAddOn,
         },
       ],
       financeDetails: {
-        financeType,
-        deposit: depositAmount,
+        financeType: selectedProduct as FinanceType,
+        deposit: calcOutput.depositAmount,
         depositType,
-        termMonths,
-        interestRate,
+        termMonths: regularPayments,
+        interestRate: rate,
         paymentFrequency,
-        balloonPayment,
-        documentationFee,
-        optionToPurchaseFee,
+        balloonPayment: calcOutput.balloonAmount,
+        balloonType,
+        balloonCollection,
+        documentationFee: documentFee,
+        optionToPurchaseFee: otpFee,
+        annualAdminFee,
+        paymentMode,
+        rateType,
+        advancePayments,
+        commissionValue,
+        commissionType,
+        commissionAmount: calcOutput.commissionAmount,
+        subsidy,
+        serviceAddOn,
+        nonVatableAmount,
+        calculateMode,
+        grossYield: calcOutput.grossYield,
+        netYield: calcOutput.netYield,
+        apr: calcOutput.apr,
+        flatRateExclComm: calcOutput.flatRateExclComm,
+        flatRateInclComm: calcOutput.flatRateInclComm,
+        upfrontPayment: calcOutput.upfrontPayment,
+        grossProfit: calcOutput.grossProfit,
       },
       status: 'saved',
-      notes,
     };
 
-    const saved = saveQuotation(newQuotation);
-    addToast('Quotation Saved', `Quotation ${saved.reference} is now available in your Workspace.`, 'success');
+    saveQuotation(q);
+    addToast('Quotation Saved', `Quotation ${quotationRef} saved to Workspace.`, 'success');
     navigate('/workspace');
   };
 
-  const handleConvertToProposal = () => {
-    const newQuotation: Partial<Quotation> = {
-      reference: quotationRef,
-      title,
-      assetCategoryType,
-      assetQuantity,
-      assetCost: totalNetAssetCost,
-      vatAmount,
-      vatRate,
-      vatTreatment,
-      loanAmount,
-      customerName: title,
-      dealerId: selectedInventoryItem?.dealerId || 'dlr-1',
-      dealerName: currentUser.organization || 'Atlas Plant & Machinery Ltd',
-      inventoryItemId: selectedInventoryItem?.id,
-      assets: [
-        {
-          id: `ast-${Date.now()}`,
-          category: assetCategoryType === 'hard' ? 'Hard Machinery' : 'Soft Asset',
-          manufacturer: selectedInventoryItem?.manufacturer || 'Commercial Supplier',
-          model: selectedInventoryItem?.model || title,
-          description: selectedInventoryItem?.description || `${assetCategoryType.toUpperCase()} asset quoted for finance`,
-          quantity: assetQuantity,
-          unitPrice: assetCost,
-          additionalCosts: 0,
-        },
-      ],
-      financeDetails: {
-        financeType,
-        deposit: depositAmount,
-        depositType,
-        termMonths,
-        interestRate,
-        paymentFrequency,
-        balloonPayment,
-        documentationFee,
-        optionToPurchaseFee,
-      },
-      status: 'converted',
-      notes,
-    };
-
-    const saved = saveQuotation(newQuotation);
-    navigate(`/proposals/new?quotationId=${saved.id}`);
-  };
-
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-4 gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">Finance Quotation & Amortization</h1>
-            <span className="rounded-md bg-slate-100 font-mono text-xs font-bold text-slate-700 px-2 py-0.5 border border-slate-200">
-              {quotationRef}
-            </span>
+    <div className="min-h-screen bg-slate-50/60 pb-16 font-sans">
+      <div className="max-w-[1440px] mx-auto space-y-4 px-2 sm:px-4">
+        {/* TOP BAR: Quotation Name and Action Buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+          <div className="flex-1 max-w-xl">
+            <input
+              type="text"
+              placeholder="Enter Quotation Name..."
+              value={quotationName}
+              onChange={(e) => setQuotationName(e.target.value)}
+              className="w-full bg-transparent text-lg font-semibold text-slate-800 placeholder:text-slate-400 border-b border-transparent hover:border-slate-300 focus:border-brand-600 focus:outline-none transition-colors px-1 py-1"
+            />
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Calculate loan amounts, view month-by-month repayment schedules, and export official PDF quotations.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={handleDownloadPDF}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-navy-900 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-navy-800 transition-colors"
-          >
-            <Download className="h-3.5 w-3.5 text-brand-400" />
-            <span>Download PDF</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs"
-          >
-            <Printer className="h-3.5 w-3.5 text-slate-500" />
-            <span>Print</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate('/workspace')}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs"
-          >
-            <FolderKanban className="h-3.5 w-3.5 text-slate-500" />
-            <span>Workspace</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Single Form Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Financial Inputs Form */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Section 1: Asset Selection / Classification */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">
-                  1
-                </span>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  {isDealer ? 'Dealer Stock Asset Selection' : 'Asset Classification'}
-                </h2>
-              </div>
-
-              {isDealer && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Dealer Inventory Locked
-                </span>
-              )}
-            </div>
-
-            {/* DEALER ADMIN INVENTORY SELECTION */}
-            {isDealer ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-slate-800">
-                    Select Asset from Dealership Stock *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/inventory')}
-                    className="text-[11px] font-medium text-brand-600 hover:underline flex items-center gap-1"
-                  >
-                    <span>Manage Inventory</span>
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
-                </div>
-
-                {/* Selected Asset Display Card */}
-                {selectedInventoryItem ? (
-                  <div className="rounded-xl border-2 border-brand-200 bg-brand-50/30 p-3.5 relative transition-all">
-                    <div className="flex flex-col sm:flex-row gap-3.5 items-start sm:items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {selectedInventoryItem.imageUrl ? (
-                          <img
-                            src={selectedInventoryItem.imageUrl}
-                            alt={selectedInventoryItem.title}
-                            className="h-16 w-20 rounded-lg object-cover border border-slate-200 shadow-xs"
-                          />
-                        ) : (
-                          <div className="flex h-16 w-20 items-center justify-center rounded-lg bg-slate-200 text-slate-500">
-                            <ImageIcon className="h-6 w-6" />
-                          </div>
-                        )}
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                                selectedInventoryItem.categoryType === 'hard'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-purple-100 text-purple-800'
-                              }`}
-                            >
-                              {selectedInventoryItem.categoryType === 'hard' ? 'Hard Asset' : 'Soft Asset'}
-                            </span>
-                            <span className="text-[11px] text-slate-500">{selectedInventoryItem.categoryName}</span>
-                          </div>
-                          <h3 className="text-sm font-bold text-slate-900 mt-0.5">
-                            {selectedInventoryItem.title}
-                          </h3>
-                          <p className="text-[11px] text-slate-500">
-                            {selectedInventoryItem.manufacturer} {selectedInventoryItem.model} • Stock:{' '}
-                            <strong className="text-slate-800">{selectedInventoryItem.quantity} Available</strong>
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
-                        <span className="text-[10px] uppercase font-bold text-slate-500">Inventory Unit Price</span>
-                        <p className="text-lg font-extrabold text-slate-900 leading-tight">
-                          {formatCurrency(selectedInventoryItem.price)}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setInventoryPickerOpen(!inventoryPickerOpen)}
-                          className="mt-1 text-xs font-semibold text-brand-600 hover:text-brand-800 underline block sm:inline"
-                        >
-                          Change Asset...
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-2.5 pt-2 border-t border-brand-100/60 flex items-center justify-between text-[11px] text-slate-600">
-                      <span className="flex items-center gap-1 text-slate-500">
-                        <Lock className="h-3 w-3 text-slate-400" />
-                        Asset specifics locked from verified inventory
-                      </span>
-                      <span className="font-mono text-slate-500">
-                        VIN: {selectedInventoryItem.vinOrSerial || 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center bg-slate-50">
-                    <Package className="mx-auto h-8 w-8 text-slate-400" />
-                    <p className="mt-2 text-xs font-semibold text-slate-800">No Inventory Item Selected</p>
-                    <button
-                      type="button"
-                      onClick={() => setInventoryPickerOpen(true)}
-                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-brand-700"
-                    >
-                      Select from Stock
-                    </button>
-                  </div>
-                )}
-
-                {/* Dropdown Inventory Selector Modal / Drawer */}
-                {inventoryPickerOpen && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg space-y-2 mt-2">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 px-1">
-                      <span className="text-xs font-bold text-slate-900">Choose from Available Stock:</span>
-                      <button
-                        type="button"
-                        onClick={() => setInventoryPickerOpen(false)}
-                        className="text-[11px] text-slate-400 hover:text-slate-600"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                      {dealerInventory.map((item) => (
-                        <div
-                          key={item.id}
-                          onClick={() => {
-                            setSelectedInventoryItem(item);
-                            setInventoryPickerOpen(false);
-                          }}
-                          className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${
-                            selectedInventoryItem?.id === item.id
-                              ? 'border-brand-500 bg-brand-50/50'
-                              : 'border-slate-100 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <img
-                              src={item.imageUrl}
-                              alt={item.title}
-                              className="h-9 w-12 rounded object-cover border border-slate-200"
-                            />
-                            <div>
-                              <p className="text-xs font-bold text-slate-900">{item.title}</p>
-                              <p className="text-[10px] text-slate-500">
-                                {item.categoryName} • {item.quantity} in stock
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs font-extrabold text-slate-900">
-                              {formatCurrency(item.price)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Quantity and Calculated Net Cost for Dealer */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Quantity to Quote (Max in stock: {selectedInventoryItem?.quantity || 1})
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max={selectedInventoryItem?.quantity || 99}
-                      value={assetQuantity}
-                      onChange={(e) => setAssetQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">
-                      Total Net Asset Cost
-                    </label>
-                    <div className="w-full rounded-md bg-slate-100 border border-slate-200 px-3 py-2 text-xs font-bold text-slate-900">
-                      {formatCurrency(totalNetAssetCost)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* NON-DEALER (TENANT ADMIN / BROKER) REGULAR FORM */
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Quotation / Facility Reference Name
-                  </label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g. Scania Tractor Unit 48m HP"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Asset Type: Hard vs Soft */}
-                  <div className="sm:col-span-3">
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                      Asset Type Classification *
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setAssetCategoryType('hard')}
-                        className={`flex items-center justify-center gap-2 rounded-md border p-2.5 text-xs font-medium transition-all ${
-                          assetCategoryType === 'hard'
-                            ? 'border-brand-600 bg-brand-50 text-brand-900 font-bold ring-1 ring-brand-600'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span>Hard Asset</span>
-                        <span className="text-[10px] text-slate-500 hidden sm:inline">(Machinery, Vehicles, Plant)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setAssetCategoryType('soft')}
-                        className={`flex items-center justify-center gap-2 rounded-md border p-2.5 text-xs font-medium transition-all ${
-                          assetCategoryType === 'soft'
-                            ? 'border-brand-600 bg-brand-50 text-brand-900 font-bold ring-1 ring-brand-600'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span>Soft Asset</span>
-                        <span className="text-[10px] text-slate-500 hidden sm:inline">(IT, Software, Fit-out)</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Quantity */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Asset Quantity *
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={assetQuantity}
-                      onChange={(e) => setAssetQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Net Unit Price / Cost */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Unit Cost (£ excl. VAT) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="500"
-                      value={assetCost}
-                      onChange={(e) => setAssetCost(parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 font-semibold focus:border-brand-600 focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Total Net Asset Cost */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">
-                      Total Net Cost
-                    </label>
-                    <div className="w-full rounded-md bg-slate-100 border border-slate-200 px-3 py-2 text-xs font-bold text-slate-800">
-                      {formatCurrency(totalNetAssetCost)}
-                    </div>
-                  </div>
-                </div>
-              </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            {/* Dealer Inventory Quick Button */}
+            {isDealer && (
+              <button
+                type="button"
+                onClick={() => navigate('/inventory')}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 shadow-xs transition-colors"
+              >
+                <Package className="h-3.5 w-3.5" />
+                <span>Stock Inventory ({dealerInventory.length})</span>
+              </button>
             )}
 
-            {/* VAT Treatment */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  VAT Treatment
-                </label>
-                <select
-                  value={vatTreatment}
-                  onChange={(e) => setVatTreatment(e.target.value as any)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                >
-                  <option value="financed">20% Standard VAT (Financed in Facility)</option>
-                  <option value="upfront">20% Standard VAT (Paid Upfront by Client)</option>
-                  <option value="zero">Zero Rated / Exempt (0%)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">
-                  VAT Amount ({vatRate}%)
-                </label>
-                <div className="w-full rounded-md bg-slate-100 border border-slate-200 px-3 py-2 text-xs font-medium text-slate-800">
-                  {formatCurrency(vatAmount)}
-                </div>
-              </div>
+            {/* Three dots menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setScheduleModalOpen(true)}
+                title="View Full Amortization Schedule & PDF"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-xs transition-colors"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
             </div>
+
+            {/* Get Rates Button */}
+            <button
+              type="button"
+              onClick={() => setRateCardsModalOpen(true)}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
+            >
+              Get Rates
+            </button>
+
+            {/* Save Quotation Button */}
+            <button
+              type="button"
+              onClick={handleSaveQuotation}
+              className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-200 shadow-xs transition-colors"
+            >
+              Save Quotation
+            </button>
+          </div>
+        </div>
+
+        {/* TOP FILTER STRIP (6 Select Boxes + Settings Icon) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-7 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+          {/* Product Type */}
+          <div className="relative">
+            <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+              Product Type
+            </label>
+            <select
+              value={productType}
+              onChange={(e) => setProductType(e.target.value)}
+              className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="Un Regulated">Un Regulated</option>
+              <option value="Regulated">Regulated</option>
+              <option value="Corporate Exempt">Corporate Exempt</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-6 h-3.5 w-3.5 text-slate-400" />
           </div>
 
-          {/* Section 2: Financing Terms & Parameters */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-700">
-                2
-              </span>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Finance & Amortization Parameters
-              </h2>
+          {/* Asset Type */}
+          <div className="relative">
+            <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+              Asset Type
+            </label>
+            <select
+              value={assetType}
+              onChange={(e) => setAssetType(e.target.value)}
+              className="w-full appearance-none truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="Hard Asset - Waste - Scrap & Recycling">Hard Asset - Waste - S..</option>
+              <option value="Hard Asset - Commercial Vehicles">Hard Asset - Vehicles</option>
+              <option value="Hard Asset - Construction & Plant">Hard Asset - Plant</option>
+              <option value="Hard Asset - Engineering & CNC">Hard Asset - CNC</option>
+              <option value="Soft Asset - Technology / Software">Soft Asset - Software</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-6 h-3.5 w-3.5 text-slate-400" />
+          </div>
+
+          {/* Lender Name */}
+          <div className="relative">
+            <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+              Lender Name
+            </label>
+            <select
+              value={lenderName}
+              onChange={(e) => setLenderName(e.target.value)}
+              className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="Ultimate Finance">Ultimate Finance</option>
+              <option value="Investec Asset Finance">Investec Finance</option>
+              <option value="Close Brothers">Close Brothers</option>
+              <option value="Lombard">Lombard</option>
+              <option value="Internal Syndication">Internal Syndication</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-6 h-3.5 w-3.5 text-slate-400" />
+          </div>
+
+          {/* Program Name */}
+          <div className="relative">
+            <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+              Program Name
+            </label>
+            <select
+              value={programName}
+              onChange={(e) => setProgramName(e.target.value)}
+              className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="Program Name">Program Name</option>
+              <option value="Prime Standard">Prime Standard</option>
+              <option value="Near Prime">Near Prime</option>
+              <option value="Sub-Prime Commercial">Sub-Prime Commercial</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-6 h-3.5 w-3.5 text-slate-400" />
+          </div>
+
+          {/* Client Type */}
+          <div className="relative">
+            <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+              Client Type
+            </label>
+            <select
+              value={clientType}
+              onChange={(e) => setClientType(e.target.value)}
+              className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="PLC">PLC</option>
+              <option value="LTD">Limited (LTD)</option>
+              <option value="Sole Trader">Sole Trader</option>
+              <option value="Partnership">Partnership</option>
+              <option value="LLP">LLP</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-6 h-3.5 w-3.5 text-slate-400" />
+          </div>
+
+          {/* Credit Tier */}
+          <div className="relative">
+            <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">
+              Credit Tier
+            </label>
+            <select
+              value={creditTier}
+              onChange={(e) => setCreditTier(e.target.value)}
+              className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="Credit Tier">Credit Tier</option>
+              <option value="Tier A (Prime)">Tier A (Prime)</option>
+              <option value="Tier B (Standard)">Tier B (Standard)</option>
+              <option value="Tier C (Sub-Prime)">Tier C (Sub-Prime)</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-6 h-3.5 w-3.5 text-slate-400" />
+          </div>
+
+          {/* Settings / Sliders Icon Button */}
+          <div className="flex items-end justify-center pt-3 sm:pt-0">
+            <button
+              type="button"
+              onClick={() => setRateCardsModalOpen(true)}
+              title="Configure Rate & Underwriting Matrix"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* 3-COLUMN MAIN LAYOUT */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* ================= COLUMN 1: FINANCING INPUTS & VAT (5 cols) ================= */}
+          <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            {/* Product Type Tabs / Carousel */}
+            <div className="flex items-center gap-1 border-b border-slate-100 pb-3">
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="flex-1 flex items-center justify-center gap-1.5 overflow-x-auto py-1">
+                {PRODUCT_TABS.slice(0, 3).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setSelectedProduct(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
+                      selectedProduct === tab.id
+                        ? 'bg-white text-slate-900 font-bold border border-slate-200 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Product Type */}
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Loan / Finance Product Type *
-                </label>
+            {/* Calculate Mode Selector */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500 font-medium">Calculate:</span>
+              <div className="relative">
                 <select
-                  value={financeType}
-                  onChange={(e) => setFinanceType(e.target.value as FinanceType)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
+                  value={calculateMode}
+                  onChange={(e) => setCalculateMode(e.target.value)}
+                  className="appearance-none rounded-md bg-transparent font-bold text-slate-900 pr-5 focus:outline-none cursor-pointer"
                 >
-                  <option value="hire_purchase">Hire Purchase (HP)</option>
-                  <option value="finance_lease">Finance Lease</option>
-                  <option value="operating_lease">Operating Lease</option>
-                  <option value="other">Commercial Asset Loan</option>
-                  <option value="contract_hire">Contract Hire / Refinance</option>
+                  <option value="Periodic Payment">Periodic Payment</option>
+                  <option value="Loan Amount">Loan Amount</option>
+                  <option value="Asset Cost">Asset Cost</option>
+                  <option value="Term">Term (Months)</option>
                 </select>
+                <ChevronDown className="pointer-events-none absolute right-0 top-0.5 h-3.5 w-3.5 text-slate-500" />
               </div>
+            </div>
 
-              {/* Deposit / Advance Payment */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-slate-700">Deposit / Upfront</label>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                    <label className="cursor-pointer">
-                      <input
-                        type="radio"
-                        checked={depositType === 'amount'}
-                        onChange={() => setDepositType('amount')}
-                        className="mr-1"
-                      />
-                      £ Amount
-                    </label>
-                    <label className="cursor-pointer">
-                      <input
-                        type="radio"
-                        checked={depositType === 'percentage'}
-                        onChange={() => setDepositType('percentage')}
-                        className="mr-1"
-                      />
-                      % Rate
-                    </label>
-                  </div>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  value={depositValue}
-                  onChange={(e) => setDepositValue(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">
-                  Effective deposit: {formatCurrency(depositAmount)}
-                </span>
-              </div>
-
-              {/* Net Loan Amount */}
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Net Loan / Finance Amount Requested (£)
-                </label>
-                <div className="w-full rounded-md bg-blue-50/60 border border-blue-200 px-3 py-2 text-xs font-bold text-brand-700">
-                  {formatCurrency(loanAmount)}
+            {/* 2-Column Inputs Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              {/* Row 1: Date & Asset Cost */}
+              <div className="relative">
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Quote Date</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={quoteDate}
+                    onChange={(e) => setQuoteDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-800 focus:border-brand-500 focus:outline-none"
+                  />
+                  <Calendar className="pointer-events-none absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 </div>
               </div>
 
-              {/* Period (Number of Months) */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Period / Term (Number of Months) *
-                </label>
-                <select
-                  value={termMonths}
-                  onChange={(e) => setTermMonths(parseInt(e.target.value) || 48)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                >
-                  <option value={12}>12 Months (1 Year)</option>
-                  <option value={24}>24 Months (2 Years)</option>
-                  <option value={36}>36 Months (3 Years)</option>
-                  <option value={48}>48 Months (4 Years)</option>
-                  <option value={60}>60 Months (5 Years)</option>
-                  <option value={72}>72 Months (6 Years)</option>
-                  <option value={84}>84 Months (7 Years)</option>
-                </select>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Asset Cost</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-medium text-slate-500">£</span>
+                  <input
+                    type="number"
+                    step="100"
+                    min="0"
+                    value={assetCost}
+                    onChange={(e) => setAssetCost(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border border-slate-200 pl-7 pr-3 py-2 text-xs font-semibold text-slate-900 focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
-              {/* Interest Rate */}
+              {/* Row 2: Service/Add-On & Non Vatable Amount */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Interest Rate (% p.a. Fixed) *
-                </label>
-                <input
-                  type="number"
-                  step="0.05"
-                  value={interestRate}
-                  onChange={(e) => setInterestRate(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                />
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Service/Add-On</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-medium text-slate-500">£</span>
+                  <input
+                    type="number"
+                    step="50"
+                    min="0"
+                    value={serviceAddOn}
+                    onChange={(e) => setServiceAddOn(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border border-slate-200 pl-7 pr-3 py-2 text-xs font-medium text-slate-800 focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
-              {/* Payment Frequency */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Payment Frequency
-                </label>
-                <select
-                  value={paymentFrequency}
-                  onChange={(e) => setPaymentFrequency(e.target.value as PaymentFrequency)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                >
-                  <option value="monthly">Monthly in Advance</option>
-                  <option value="quarterly">Quarterly in Advance</option>
-                  <option value="annually">Annually</option>
-                </select>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Non Vatable Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-medium text-slate-500">£</span>
+                  <input
+                    type="number"
+                    step="50"
+                    min="0"
+                    value={nonVatableAmount}
+                    onChange={(e) => setNonVatableAmount(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border border-slate-200 pl-7 pr-3 py-2 text-xs font-medium text-slate-800 focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
-              {/* Balloon / Residual Payment */}
+              {/* Row 3: Deposit & Commission */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Final Balloon / Residual Payment (£)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="500"
-                  value={balloonPayment}
-                  onChange={(e) => setBalloonPayment(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                />
-              </div>
-
-              {/* Documentation Fee */}
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Documentation Fee (£)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={documentationFee}
-                  onChange={(e) => setDocumentationFee(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
-                />
-              </div>
-
-              {/* Option to purchase (for HP) */}
-              {financeType === 'hire_purchase' && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Option to Purchase Fee (£)
-                  </label>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Deposit</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden focus-within:border-brand-500">
+                  <span className="px-2.5 py-2 text-xs font-medium text-slate-500 bg-slate-50 border-r border-slate-200">
+                    £
+                  </span>
                   <input
                     type="number"
                     min="0"
-                    value={optionToPurchaseFee}
-                    onChange={(e) => setOptionToPurchaseFee(parseFloat(e.target.value) || 0)}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
+                    value={depositValue}
+                    onChange={(e) => setDepositValue(parseFloat(e.target.value) || 0)}
+                    className="w-full px-2 py-2 text-xs font-medium text-slate-800 focus:outline-none"
                   />
+                  <select
+                    value={depositType}
+                    onChange={(e) => setDepositType(e.target.value as any)}
+                    className="px-2 py-2 text-[11px] font-bold text-slate-600 bg-slate-50 border-l border-slate-200 focus:outline-none"
+                  >
+                    <option value="amount">£</option>
+                    <option value="percentage">%</option>
+                  </select>
                 </div>
-              )}
+              </div>
 
-              {/* Quotation Remarks */}
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Financial Terms Notes (Optional)
-                </label>
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Commission</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden focus-within:border-brand-500">
+                  <input
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    value={commissionValue}
+                    onChange={(e) => setCommissionValue(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none"
+                  />
+                  <select
+                    value={commissionType}
+                    onChange={(e) => setCommissionType(e.target.value as any)}
+                    className="px-2 py-2 text-[11px] font-bold text-slate-600 bg-slate-50 border-l border-slate-200 focus:outline-none"
+                  >
+                    <option value="percentage">%</option>
+                    <option value="amount">£</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 4: Rate & Rate Type */}
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Rate</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden focus-within:border-brand-500">
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    value={rate}
+                    onChange={(e) => setRate(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                  <span className="px-2.5 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-l border-slate-200">
+                    %
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Rate Type</label>
+                <div className="relative">
+                  <select
+                    value={rateType}
+                    onChange={(e) => setRateType(e.target.value as any)}
+                    className="w-full appearance-none rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+                  >
+                    <option value="Nominal Rate">Nominal Rate</option>
+                    <option value="Flat Rate">Flat Rate</option>
+                    <option value="Effective Rate">Effective Rate</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Row 5: Advance Payments & Regular Payments */}
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Advance Payments</label>
                 <input
-                  type="text"
-                  placeholder="e.g. Indicative terms subject to credit score and underwriting approval"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-brand-600 focus:outline-none"
+                  type="number"
+                  min="0"
+                  value={advancePayments}
+                  onChange={(e) => setAdvancePayments(parseInt(e.target.value) || 0)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-800 focus:border-brand-500 focus:outline-none"
                 />
               </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Right 1 Column: Real-time Calculation Summary & Actions */}
-        <div className="space-y-4">
-          <div className="sticky top-6 rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Calculator className="h-4 w-4 text-brand-600" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                  Calculated Repayment
-                </h3>
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Regular Payments</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={regularPayments}
+                  onChange={(e) => setRegularPayments(Math.max(1, parseInt(e.target.value) || 12))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-900 focus:border-brand-500 focus:outline-none"
+                />
               </div>
-              <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                {termMonths} Mo • {paymentFrequency}
-              </span>
-            </div>
 
-            {/* Big Repayment Display */}
-            <div className="rounded-xl bg-brand-50/70 border border-brand-200 p-4 text-center">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-brand-900">
-                Estimated {paymentFrequency} Repayment
-              </span>
-              <div className="mt-1 text-2xl font-extrabold text-brand-700">
-                {formatCurrency(periodicRepayment)}
-              </div>
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                Excl. VAT where applicable | Rate: {formatPercent(interestRate)} p.a.
-              </span>
-            </div>
-
-            {/* Financial Breakdown Table */}
-            <div className="space-y-2 text-xs text-slate-600 pt-1 border-t border-slate-100">
-              <div className="flex justify-between">
-                <span>Net Asset Cost:</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(totalNetAssetCost)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>VAT ({vatTreatment === 'zero' ? 'Exempt' : '20%'}):</span>
-                <span className="font-medium text-slate-800">{formatCurrency(vatAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Gross Value:</span>
-                <span className="font-medium text-slate-800">{formatCurrency(totalCostIncVAT)}</span>
-              </div>
-              <div className="flex justify-between text-amber-800 font-medium">
-                <span>Deposit / Advance:</span>
-                <span>-{formatCurrency(depositAmount)}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-100 pt-1 font-bold text-slate-900">
-                <span>Finance Requested:</span>
-                <span className="text-brand-600">{formatCurrency(loanAmount)}</span>
-              </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Estimated Total Interest:</span>
-                <span>{formatCurrency(totalInterest)}</span>
-              </div>
-              {balloon > 0 && (
-                <div className="flex justify-between text-slate-500">
-                  <span>Final Balloon Payment:</span>
-                  <span>{formatCurrency(balloon)}</span>
+              {/* Row 6: Balloon Payment & Balloon Collection */}
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Balloon Payment</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden focus-within:border-brand-500">
+                  <span className="px-2.5 py-2 text-xs font-medium text-slate-500 bg-slate-50 border-r border-slate-200">
+                    £
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={balloonValue}
+                    onChange={(e) => setBalloonValue(parseFloat(e.target.value) || 0)}
+                    className="w-full px-2 py-2 text-xs font-medium text-slate-800 focus:outline-none"
+                  />
+                  <select
+                    value={balloonType}
+                    onChange={(e) => setBalloonType(e.target.value as any)}
+                    className="px-2 py-2 text-[11px] font-bold text-slate-600 bg-slate-50 border-l border-slate-200 focus:outline-none"
+                  >
+                    <option value="amount">£</option>
+                    <option value="percentage">%</option>
+                  </select>
                 </div>
-              )}
-              <div className="flex justify-between border-t border-slate-100 pt-1 font-semibold text-slate-800">
-                <span>Total Amount Repayable:</span>
-                <span>{formatCurrency(totalRepayable)}</span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Balloon Collection</label>
+                <div className="relative">
+                  <select
+                    value={balloonCollection}
+                    onChange={(e) => setBalloonCollection(e.target.value)}
+                    className="w-full appearance-none rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-800 pr-7 focus:border-brand-500 focus:outline-none"
+                  >
+                    <option value="With Last Payment">With Last Payment</option>
+                    <option value="Separate Invoice">Separate Invoice</option>
+                    <option value="Direct Debit">Direct Debit</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Row 7: Subsidy */}
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">Subsidy</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-medium text-slate-500">£</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={subsidy}
+                    onChange={(e) => setSubsidy(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border border-slate-200 pl-7 pr-3 py-2 text-xs font-medium text-slate-800 focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Download PDF & Actions */}
-            <div className="space-y-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={handleDownloadPDF}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-navy-900 py-2.5 text-xs font-bold text-white hover:bg-navy-800 shadow-xs transition-colors"
-              >
-                <Download className="h-4 w-4 text-brand-400" />
-                <span>Download Repayment Plan (PDF)</span>
-              </button>
+            {/* VAT Treatment Section */}
+            <div className="pt-3 border-t border-slate-100 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800">VAT Treatment</span>
+                <button
+                  type="button"
+                  onClick={handleCalculateVAT}
+                  className="text-xs font-medium text-slate-600 hover:text-brand-600 hover:underline"
+                >
+                  Calculate VAT
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={handleSave}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2.5 text-xs font-bold text-white hover:bg-brand-700 shadow-xs transition-colors"
-              >
-                <Save className="h-4 w-4" />
-                <span>Save Quotation to Workspace</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConvertToProposal}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs transition-colors"
-              >
-                <span>Convert Directly to Proposal</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleReset}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                <RotateCcw className="h-3.5 w-3.5 text-slate-400" />
-                <span>Reset Calculator</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* COMPREHENSIVE MONTH-BY-MONTH REPAYMENT SCHEDULE / AMORTIZATION PLAN */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-        {/* Schedule Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/70 gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-brand-600" />
-              <h3 className="text-sm font-bold text-slate-900">
-                Monthly Repayment Plan & Amortization Schedule
-              </h3>
-              <span className="rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 border border-blue-200">
-                {termMonths} Total Payments
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Detailed breakdown of every month you need to pay, including principal repayment, interest portion, and remaining loan balance.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDownloadPDF}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs"
-            >
-              <Download className="h-3.5 w-3.5 text-brand-600" />
-              <span>Export Schedule PDF</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAllScheduleMonths(!showAllScheduleMonths)}
-              className="rounded-lg bg-brand-50 border border-brand-200 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition-colors"
-            >
-              {showAllScheduleMonths ? 'Show First 12 Months' : `View All ${termMonths} Months`}
-            </button>
-          </div>
-        </div>
-
-        {/* Schedule Quick Summary Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-100 bg-white border-b border-slate-200 text-center py-2.5">
-          <div className="p-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Regular Payment</span>
-            <p className="text-sm font-extrabold text-slate-900 mt-0.5">{formatCurrency(periodicRepayment)}</p>
-          </div>
-          <div className="p-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Total Capital Repaid</span>
-            <p className="text-sm font-extrabold text-slate-900 mt-0.5">{formatCurrency(loanAmount)}</p>
-          </div>
-          <div className="p-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Total Interest</span>
-            <p className="text-sm font-extrabold text-amber-700 mt-0.5">{formatCurrency(totalInterest)}</p>
-          </div>
-          <div className="p-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Total Payable</span>
-            <p className="text-sm font-extrabold text-brand-700 mt-0.5">{formatCurrency(totalRepayable)}</p>
-          </div>
-        </div>
-
-        {/* Schedule Table */}
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-slate-700 font-bold z-10">
-              <tr>
-                <th className="px-5 py-2.5">Payment Period</th>
-                <th className="px-5 py-2.5 text-right">Payment Due (£)</th>
-                <th className="px-5 py-2.5 text-right">Capital Principal (£)</th>
-                <th className="px-5 py-2.5 text-right">Interest (£)</th>
-                <th className="px-5 py-2.5 text-right">Remaining Balance (£)</th>
-                <th className="px-5 py-2.5">Schedule Notes & Milestones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(showAllScheduleMonths
-                ? amortizationSchedule
-                : amortizationSchedule.slice(0, 12)
-              ).map((row) => (
-                <tr
-                  key={row.month}
-                  className={`hover:bg-slate-50/80 transition-colors ${
-                    row.month === 1
-                      ? 'bg-blue-50/20'
-                      : row.month === termMonths
-                      ? 'bg-amber-50/20 font-medium'
-                      : ''
+              <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setVatTreatment('upfront')}
+                  className={`py-1.5 text-xs font-bold rounded-md transition-all ${
+                    vatTreatment === 'upfront'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <td className="px-5 py-2.5 font-semibold text-slate-900">
-                    {row.periodLabel}
-                  </td>
-                  <td className="px-5 py-2.5 text-right font-extrabold text-slate-900">
-                    {formatCurrency(row.payment)}
-                  </td>
-                  <td className="px-5 py-2.5 text-right text-emerald-700 font-medium">
-                    {formatCurrency(row.principal)}
-                  </td>
-                  <td className="px-5 py-2.5 text-right text-amber-700 font-medium">
-                    {formatCurrency(row.interest)}
-                  </td>
-                  <td className="px-5 py-2.5 text-right font-mono font-semibold text-slate-800">
-                    {formatCurrency(row.remainingBalance)}
-                  </td>
-                  <td className="px-5 py-2.5 text-slate-500 text-[11px]">
-                    {row.notes ? (
-                      <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-slate-700">
-                        <Info className="h-3 w-3 text-brand-600" />
-                        {row.notes}
-                      </span>
-                    ) : (
-                      'Regular monthly repayment'
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  VAT Upfront
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVatTreatment('deferred')}
+                  className={`py-1.5 text-xs font-bold rounded-md transition-all ${
+                    vatTreatment === 'deferred'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  VAT Deferred
+                </button>
+              </div>
 
-        {/* Schedule Footer Strip */}
-        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-500">
-          <span>
-            Showing {!showAllScheduleMonths && termMonths > 12 ? `12 of ${termMonths}` : `${termMonths} of ${termMonths}`} monthly repayment installments
-          </span>
-          <div className="flex items-center gap-2">
-            {!showAllScheduleMonths && termMonths > 12 && (
-              <button
-                type="button"
-                onClick={() => setShowAllScheduleMonths(true)}
-                className="text-xs font-semibold text-brand-600 hover:underline"
-              >
-                Expand all {termMonths} months
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleDownloadPDF}
-              className="inline-flex items-center gap-1 text-xs font-bold text-navy-900 hover:text-brand-600"
-            >
-              <Download className="h-3 w-3" />
-              <span>Download Complete Repayment PDF</span>
-            </button>
+              <div>
+                <label className="block text-[10px] text-slate-500 font-medium mb-1">VAT Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-medium text-slate-500">£</span>
+                  <input
+                    type="text"
+                    value={customVatAmount}
+                    onChange={(e) => setCustomVatAmount(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 pl-7 pr-3 py-2 text-xs font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Advanced Structure Toggles */}
+            <div className="pt-2 border-t border-slate-100 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-700">Irregular Payments (0)</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={irregularPaymentsActive}
+                    onChange={() => setIrregularPaymentsActive(!irregularPaymentsActive)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-900"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-700">Step Payments</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={stepPaymentsActive}
+                    onChange={() => setStepPaymentsActive(!stepPaymentsActive)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-900"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-700">Step Payments Structure (0)</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={stepStructureActive}
+                    onChange={() => setStepStructureActive(!stepStructureActive)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-900"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* ================= COLUMN 2: RESULTS & ACTIONS (4 cols) ================= */}
+          <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between min-h-[580px]">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 mb-3">Results</h2>
+
+              {/* Subheader row: From-To | Amount (W/O VAT) */}
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-700 border-b border-slate-200 pb-2 mb-2">
+                <span>From-To</span>
+                <span>Amount (W/O VAT)</span>
+              </div>
+
+              {/* Calculated Periodic Payment Row */}
+              {calcOutput.periodicPayment > 0 && (
+                <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 font-bold text-slate-900 bg-slate-50/60 px-1 rounded">
+                  <span>
+                    Months 1 - {regularPayments}
+                  </span>
+                  <span>{formatCurrency(calcOutput.periodicPayment)}</span>
+                </div>
+              )}
+
+              {/* Summary Items */}
+              <div className="space-y-3 pt-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Finance Amount:</span>
+                  <span className="font-bold text-slate-900">{formatCurrency(calcOutput.financeAmount)}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Commission Amount:</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(calcOutput.commissionAmount)}</span>
+                </div>
+
+                {/* Collapsible Upfront Payment Group */}
+                <div className="border-t border-slate-100 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setUpfrontGroupOpen(!upfrontGroupOpen)}
+                    className="flex w-full items-center justify-between text-xs font-bold text-slate-800 hover:text-slate-900"
+                  >
+                    <span className="flex items-center gap-1">
+                      Upfront Payment:
+                      {upfrontGroupOpen ? (
+                        <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                      )}
+                    </span>
+                    <span>{formatCurrency(calcOutput.upfrontPayment)}</span>
+                  </button>
+
+                  {upfrontGroupOpen && (
+                    <div className="pl-3 pr-1 pt-2 space-y-1.5 text-[11px] text-slate-500">
+                      <div className="flex justify-between">
+                        <span>Advance Rentals:</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(calcOutput.advanceRentals)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Deposit:</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(calcOutput.depositAmount)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Services:</span>
+                        <span className="font-medium text-slate-700">{formatCurrency(serviceAddOn)}</span>
+                      </div>
+                      {vatTreatment === 'upfront' && calcOutput.vatAmount > 0 && (
+                        <div className="flex justify-between text-amber-700">
+                          <span>Upfront VAT (20%):</span>
+                          <span>{formatCurrency(calcOutput.vatAmount)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-slate-100 pt-2 font-bold">
+                  <span className="text-slate-800">Gross Profit:</span>
+                  <span className="text-slate-900">{formatCurrency(calcOutput.grossProfit)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="pt-6 border-t border-slate-100 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    addToast('Calculation Updated', 'Recalculated facility parameters.', 'success');
+                  }}
+                  className="flex-1 rounded-lg bg-black text-white px-4 py-2.5 text-xs font-bold hover:bg-slate-800 transition-colors shadow-xs"
+                >
+                  Calculate
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setComparisonModalOpen(true)}
+                  className="rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs"
+                >
+                  Create Comparison
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  title="Reset All Parameters"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition-colors shadow-xs"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* View Schedule & PDF Download trigger */}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setScheduleModalOpen(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <FileText className="h-3.5 w-3.5 text-slate-500" />
+                  <span>View Monthly Schedule</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-navy-900 py-2 text-xs font-bold text-white hover:bg-navy-800 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5 text-brand-400" />
+                  <span>Download PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ================= COLUMN 3: RATES & INFORMATION (3 cols) ================= */}
+          <div className="lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-5">
+            {/* Rates Section */}
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 mb-3">Rates</h2>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Gross Yield:</span>
+                  <span className="font-semibold text-slate-900">{formatPercent(calcOutput.grossYield)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Net Yield:</span>
+                  <span className="font-semibold text-slate-900">{formatPercent(calcOutput.netYield)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">APR:</span>
+                  <span className="font-bold text-brand-700">{formatPercent(calcOutput.apr)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Flat Rate Excl. Commission:</span>
+                  <span className="font-semibold text-slate-900">{formatPercent(calcOutput.flatRateExclComm)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Flat Rate Incl. Commission:</span>
+                  <span className="font-semibold text-slate-900">{formatPercent(calcOutput.flatRateInclComm)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Information Section */}
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setInformationOpen(!informationOpen)}
+                  className="flex items-center gap-1 text-sm font-bold text-slate-900"
+                >
+                  {informationOpen ? (
+                    <ChevronUp className="h-4 w-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  )}
+                  <span>Information</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRateCardsModalOpen(true)}
+                  className="text-xs font-medium text-slate-600 hover:text-brand-600 hover:underline"
+                >
+                  View Rate Cards
+                </button>
+              </div>
+
+              {informationOpen && (
+                <div className="space-y-3 text-xs pt-1">
+                  {/* Document Fee */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Document Fee</span>
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                      {editingFee === 'doc' ? (
+                        <input
+                          type="number"
+                          autoFocus
+                          onBlur={() => setEditingFee(null)}
+                          value={documentFee}
+                          onChange={(e) => setDocumentFee(parseFloat(e.target.value) || 0)}
+                          className="w-20 px-1 py-0.5 text-xs font-bold border border-brand-500 rounded text-right focus:outline-none"
+                        />
+                      ) : (
+                        <span>{formatCurrency(documentFee)}</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditingFee(editingFee === 'doc' ? null : 'doc')}
+                        className="text-slate-400 hover:text-slate-700"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* OTP Fee */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">OTP Fee</span>
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                      {editingFee === 'otp' ? (
+                        <input
+                          type="number"
+                          autoFocus
+                          onBlur={() => setEditingFee(null)}
+                          value={otpFee}
+                          onChange={(e) => setOtpFee(parseFloat(e.target.value) || 0)}
+                          className="w-20 px-1 py-0.5 text-xs font-bold border border-brand-500 rounded text-right focus:outline-none"
+                        />
+                      ) : (
+                        <span>{formatCurrency(otpFee)}</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditingFee(editingFee === 'otp' ? null : 'otp')}
+                        className="text-slate-400 hover:text-slate-700"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Annual Admin Fee */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Annual Admin Fee</span>
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                      {editingFee === 'admin' ? (
+                        <input
+                          type="number"
+                          autoFocus
+                          onBlur={() => setEditingFee(null)}
+                          value={annualAdminFee}
+                          onChange={(e) => setAnnualAdminFee(parseFloat(e.target.value) || 0)}
+                          className="w-20 px-1 py-0.5 text-xs font-bold border border-brand-500 rounded text-right focus:outline-none"
+                        />
+                      ) : (
+                        <span>{formatCurrency(annualAdminFee)}</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditingFee(editingFee === 'admin' ? null : 'admin')}
+                        className="text-slate-400 hover:text-slate-700"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Payment Frequency */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Payment Frequency:</span>
+                    <select
+                      value={paymentFrequency}
+                      onChange={(e) => setPaymentFrequency(e.target.value as any)}
+                      className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="annually">Annually</option>
+                    </select>
+                  </div>
+
+                  {/* Payment Mode */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Payment Mode:</span>
+                    <select
+                      value={paymentMode}
+                      onChange={(e) => setPaymentMode(e.target.value as any)}
+                      className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="Arrear">Arrear</option>
+                      <option value="Advance">Advance</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* FULL MONTH-BY-MONTH AMORTIZATION SCHEDULE MODAL */}
+      {scheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Month-by-Month Repayment Schedule & Amortization Plan
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {quotationRef} • {regularPayments} Monthly Repayments • Loan: {formatCurrency(calcOutput.financeAmount)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-navy-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-navy-800 shadow-xs"
+                >
+                  <Download className="h-3.5 w-3.5 text-brand-400" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleModalOpen(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[70vh] space-y-4">
+              {/* Summary Cards Strip */}
+              <div className="grid grid-cols-4 gap-3 text-center border border-slate-200 rounded-xl p-3 bg-slate-50/50">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Monthly Payment</span>
+                  <p className="text-base font-extrabold text-slate-900">{formatCurrency(calcOutput.periodicPayment)}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Total Capital</span>
+                  <p className="text-base font-extrabold text-slate-900">{formatCurrency(calcOutput.financeAmount)}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Total Interest</span>
+                  <p className="text-base font-extrabold text-amber-700">{formatCurrency(calcOutput.totalInterest)}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Total Repayable</span>
+                  <p className="text-base font-extrabold text-brand-700">{formatCurrency(calcOutput.totalRepayable)}</p>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2.5">Period</th>
+                      <th className="px-4 py-2.5 text-right">Payment Due</th>
+                      <th className="px-4 py-2.5 text-right">Principal</th>
+                      <th className="px-4 py-2.5 text-right">Interest</th>
+                      <th className="px-4 py-2.5 text-right">Balance</th>
+                      <th className="px-4 py-2.5">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {amortizationSchedule.map((row) => (
+                      <tr key={row.month} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2 font-semibold text-slate-800">{row.periodLabel}</td>
+                        <td className="px-4 py-2 text-right font-extrabold text-slate-900">{formatCurrency(row.payment)}</td>
+                        <td className="px-4 py-2 text-right text-emerald-700">{formatCurrency(row.principal)}</td>
+                        <td className="px-4 py-2 text-right text-amber-700">{formatCurrency(row.interest)}</td>
+                        <td className="px-4 py-2 text-right font-mono text-slate-800">{formatCurrency(row.remainingBalance)}</td>
+                        <td className="px-4 py-2 text-[11px] text-slate-500">{row.notes || 'Standard payment'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RATE CARDS MODAL */}
+      {rateCardsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900">Lender Rate Cards & Matrix</h3>
+              <button
+                type="button"
+                onClick={() => setRateCardsModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3 text-xs">
+              <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+                <div>
+                  <p className="font-bold text-slate-900">Ultimate Finance - Hard Asset Tier 1</p>
+                  <p className="text-[11px] text-slate-500">Nominal 7.50% - 8.25% | Max Term 60m</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLenderName('Ultimate Finance');
+                    setRate(7.75);
+                    setRateCardsModalOpen(false);
+                    addToast('Rate Applied', 'Ultimate Finance 7.75% applied.', 'success');
+                  }}
+                  className="rounded-md bg-brand-600 text-white font-semibold px-3 py-1.5 hover:bg-brand-700"
+                >
+                  Apply 7.75%
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+                <div>
+                  <p className="font-bold text-slate-900">Investec Asset Finance - Prime Machinery</p>
+                  <p className="text-[11px] text-slate-500">Nominal 6.75% - 7.50% | Min £50k facility</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLenderName('Investec Asset Finance');
+                    setRate(6.95);
+                    setRateCardsModalOpen(false);
+                    addToast('Rate Applied', 'Investec 6.95% applied.', 'success');
+                  }}
+                  className="rounded-md bg-brand-600 text-white font-semibold px-3 py-1.5 hover:bg-brand-700"
+                >
+                  Apply 6.95%
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+                <div>
+                  <p className="font-bold text-slate-900">Close Brothers - Construction & Transport</p>
+                  <p className="text-[11px] text-slate-500">Nominal 7.15% - 8.50% | Balloon allowed</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLenderName('Close Brothers');
+                    setRate(7.25);
+                    setRateCardsModalOpen(false);
+                    addToast('Rate Applied', 'Close Brothers 7.25% applied.', 'success');
+                  }}
+                  className="rounded-md bg-brand-600 text-white font-semibold px-3 py-1.5 hover:bg-brand-700"
+                >
+                  Apply 7.25%
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE COMPARISON MODAL */}
+      {comparisonModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900">Compare Financing Quotes</h3>
+              <button
+                type="button"
+                onClick={() => setComparisonModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-slate-600">
+                Compare current quote ({regularPayments} months @ {rate}%) against alternative loan terms:
+              </p>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="p-3 border-2 border-brand-500 bg-brand-50/50 rounded-xl">
+                  <span className="font-bold text-slate-800">Current (Option A)</span>
+                  <p className="text-xs text-slate-500 mt-1">{regularPayments} Months • {rate}%</p>
+                  <p className="text-base font-extrabold text-brand-700 mt-2">{formatCurrency(calcOutput.periodicPayment)}/mo</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Total: {formatCurrency(calcOutput.totalRepayable)}</p>
+                </div>
+                <div className="p-3 border border-slate-200 bg-white rounded-xl">
+                  <span className="font-bold text-slate-800">Option B (36 Mo)</span>
+                  <p className="text-xs text-slate-500 mt-1">36 Months • 7.50%</p>
+                  <p className="text-base font-extrabold text-slate-900 mt-2">
+                    {formatCurrency((calcOutput.financeAmount * 1.075) / 36)}/mo
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">Faster payback</p>
+                </div>
+                <div className="p-3 border border-slate-200 bg-white rounded-xl">
+                  <span className="font-bold text-slate-800">Option C (60 Mo)</span>
+                  <p className="text-xs text-slate-500 mt-1">60 Months • 8.50%</p>
+                  <p className="text-base font-extrabold text-slate-900 mt-2">
+                    {formatCurrency((calcOutput.financeAmount * 1.15) / 60)}/mo
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">Lowest monthly cost</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

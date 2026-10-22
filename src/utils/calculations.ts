@@ -218,3 +218,164 @@ export function generateAmortizationSchedule(
 
   return schedule;
 }
+
+export interface QuoteCalculationInput {
+  assetCost: number;
+  serviceAddOn: number;
+  nonVatableAmount: number;
+  vatTreatment: 'upfront' | 'deferred';
+  customVatAmount?: number;
+  depositValue: number;
+  depositType: 'amount' | 'percentage';
+  subsidy: number;
+  commissionValue: number;
+  commissionType: 'amount' | 'percentage';
+  rate: number;
+  rateType: 'Nominal Rate' | 'Flat Rate' | 'Effective Rate';
+  advancePayments: number;
+  regularPayments: number;
+  balloonValue: number;
+  balloonType: 'amount' | 'percentage';
+  balloonCollection: string;
+  documentFee: number;
+  otpFee: number;
+  annualAdminFee: number;
+  paymentFrequency: 'monthly' | 'quarterly' | 'annually';
+  paymentMode: 'Arrear' | 'Advance';
+}
+
+export interface QuoteCalculationOutput {
+  vatableAmount: number;
+  vatAmount: number;
+  depositAmount: number;
+  balloonAmount: number;
+  financeAmount: number;
+  commissionAmount: number;
+  periodicPayment: number;
+  advanceRentals: number;
+  upfrontPayment: number;
+  grossProfit: number;
+  grossYield: number;
+  netYield: number;
+  apr: number;
+  flatRateExclComm: number;
+  flatRateInclComm: number;
+  totalInterest: number;
+  totalRepayable: number;
+}
+
+export function calculateQuoteBreakdown(input: QuoteCalculationInput): QuoteCalculationOutput {
+  const vatableAmount = Math.max(0, (Number(input.assetCost) || 0) - (Number(input.nonVatableAmount) || 0));
+  const defaultVat = Math.round(vatableAmount * 0.20 * 100) / 100;
+  const vatAmount = input.customVatAmount !== undefined && input.customVatAmount !== null
+    ? Number(input.customVatAmount)
+    : defaultVat;
+
+  const assetCost = Number(input.assetCost) || 0;
+  const depositVal = Number(input.depositValue) || 0;
+  const depositAmount = input.depositType === 'percentage'
+    ? Math.round((assetCost * (depositVal / 100)) * 100) / 100
+    : depositVal;
+
+  const balloonVal = Number(input.balloonValue) || 0;
+  const balloonAmount = input.balloonType === 'percentage'
+    ? Math.round((assetCost * (balloonVal / 100)) * 100) / 100
+    : balloonVal;
+
+  const serviceAddOn = Number(input.serviceAddOn) || 0;
+  const subsidy = Number(input.subsidy) || 0;
+
+  // Finance Amount
+  const baseFinanced = assetCost + serviceAddOn + (input.vatTreatment === 'deferred' ? vatAmount : 0);
+  const financeAmount = Math.max(0, Math.round((baseFinanced - depositAmount - subsidy) * 100) / 100);
+
+  // Commission Amount
+  const commissionVal = Number(input.commissionValue) || 0;
+  const commissionAmount = input.commissionType === 'percentage'
+    ? Math.round((financeAmount * (commissionVal / 100)) * 100) / 100
+    : commissionVal;
+
+  // Term & Rate
+  const n = Math.max(1, Math.round(Number(input.regularPayments) || 12));
+  const freqMultiplier = input.paymentFrequency === 'quarterly' ? 3 : input.paymentFrequency === 'annually' ? 12 : 1;
+  const termYears = (n * freqMultiplier) / 12;
+  const annualRate = (Number(input.rate) || 0) / 100;
+
+  let periodicPayment = 0;
+  let totalInterest = 0;
+
+  if (input.rateType === 'Flat Rate') {
+    totalInterest = Math.round(financeAmount * annualRate * termYears * 100) / 100;
+    const totalToAmortize = financeAmount + totalInterest - balloonAmount;
+    periodicPayment = Math.max(0, Math.round((totalToAmortize / n) * 100) / 100);
+  } else {
+    // Nominal Rate standard PMT
+    const periodicRate = annualRate * (freqMultiplier / 12);
+    if (periodicRate === 0) {
+      periodicPayment = Math.max(0, Math.round(((financeAmount - balloonAmount) / n) * 100) / 100);
+    } else {
+      const factor = Math.pow(1 + periodicRate, -n);
+      let pmt = (financeAmount - balloonAmount * factor) * (periodicRate / (1 - factor));
+      if (input.paymentMode === 'Advance') {
+        pmt = pmt / (1 + periodicRate);
+      }
+      periodicPayment = Math.max(0, Math.round(pmt * 100) / 100);
+    }
+    const totalPayments = periodicPayment * n;
+    totalInterest = Math.max(0, Math.round((totalPayments + balloonAmount - financeAmount) * 100) / 100);
+  }
+
+  // Upfront Payment
+  const advanceCount = Math.max(0, Number(input.advancePayments) || 0);
+  const advanceRentals = Math.round(advanceCount * periodicPayment * 100) / 100;
+  const upfrontVat = input.vatTreatment === 'upfront' ? vatAmount : 0;
+  const upfrontPayment = Math.round((advanceRentals + depositAmount + serviceAddOn + upfrontVat) * 100) / 100;
+
+  // Gross Profit
+  const grossProfit = Math.round(commissionAmount * 100) / 100;
+
+  // Rates Metrics
+  const grossYield = termYears > 0 && financeAmount > 0
+    ? Math.round(((totalInterest / (financeAmount * termYears)) * 100) * 100) / 100
+    : 0;
+
+  const netYield = termYears > 0 && financeAmount > 0
+    ? Math.max(0, Math.round((((totalInterest - commissionAmount) / (financeAmount * termYears)) * 100) * 100) / 100)
+    : 0;
+
+  const flatRateExclComm = grossYield;
+  const flatRateInclComm = termYears > 0 && financeAmount > 0
+    ? Math.round((((totalInterest + commissionAmount) / (financeAmount * termYears)) * 100) * 100) / 100
+    : 0;
+
+  // APR calculation
+  const totalFees = (Number(input.documentFee) || 0) + (Number(input.otpFee) || 0) + ((Number(input.annualAdminFee) || 0) * termYears);
+  const feeImpact = termYears > 0 && financeAmount > 0 ? (totalFees / (financeAmount * termYears)) * 100 : 0;
+  const nominalAprComp = annualRate > 0 ? (Math.pow(1 + annualRate / 12, 12) - 1) * 100 : 0;
+  const apr = Math.round((nominalAprComp + feeImpact) * 100) / 100;
+
+  const docFee = Number(input.documentFee) || 0;
+  const otpFee = Number(input.otpFee) || 0;
+  const adminTotal = (Number(input.annualAdminFee) || 0) * termYears;
+  const totalRepayable = Math.round(((n * periodicPayment) + depositAmount + balloonAmount + docFee + otpFee + adminTotal) * 100) / 100;
+
+  return {
+    vatableAmount,
+    vatAmount,
+    depositAmount,
+    balloonAmount,
+    financeAmount,
+    commissionAmount,
+    periodicPayment,
+    advanceRentals,
+    upfrontPayment,
+    grossProfit,
+    grossYield,
+    netYield,
+    apr,
+    flatRateExclComm,
+    flatRateInclComm,
+    totalInterest,
+    totalRepayable,
+  };
+}

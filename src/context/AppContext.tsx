@@ -297,12 +297,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const defaultBroker = brokers[0];
 
       updated = {
+        ...pData,
         id: `pr-${Date.now()}`,
         reference: newRef,
         quotationId: pData.quotationId,
         quotationReference: pData.quotationReference,
         customerType: pData.customerType || 'business',
-        customerName: pData.customerName || 'Customer Ltd',
+        customerName: pData.customerName || pData.proposalName || 'Customer Ltd',
         contactPerson: pData.contactPerson || '',
         email: pData.email || '',
         phone: pData.phone || '',
